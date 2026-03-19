@@ -1,0 +1,26 @@
+{
+  "name": "learning-springai-alibaba",
+  "version": "1.0.0",
+  "description": "学习springai阿里巴巴",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1348345528/learning-springaialibaba.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/1348345528/learning-springaialibaba/issues"
+  },
+  "homepage": "https://github.com/1348345528/learning-springaialibaba#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}
