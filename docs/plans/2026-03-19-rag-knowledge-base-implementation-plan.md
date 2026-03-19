@@ -15,8 +15,14 @@
 1. Install Docker and Docker Compose
 2. Install Java 17+
 3. Install Node.js 18+
-4. Start Milvus: `docker run -d --name milvus -p 19530:19530 milvusdb/milvus:v2.3.3`
-5. Start MySQL 8
+4. Start MySQL 8:
+   ```bash
+   docker run -d --name mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=rag_knowledgebase mysql:8
+   ```
+5. Start Milvus (with etcd and MinIO via Docker Compose):
+   ```bash
+   docker-compose -f docker-compose-milvus.yml up -d
+   ```
 
 ---
 
@@ -1134,7 +1140,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -1144,11 +1152,13 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class DocumentService {
 
     private final DocumentParserFactory parserFactory;
     private final List<ChunkStrategy> chunkStrategies;
     private final ChunkRepository chunkRepository;
+    private final WebClient ragServiceClient = WebClient.create("http://localhost:8082");
 
     public List<ChunkDto> uploadAndChunk(MultipartFile file, ChunkRequest request) {
         String fileName = file.getOriginalFilename();
@@ -1178,8 +1188,32 @@ public class DocumentService {
                     .tags(JSON.toJSONString(tc.getTags() != null ? tc.getTags() : request.getTags()))
                     .build();
             chunkRepository.save(chunk);
+
+            // 【关键修复】同步索引到 Milvus
+            indexToVectorStore(chunk);
+
             return toDto(chunk);
         }).collect(Collectors.toList());
+    }
+
+    /**
+     * 将 chunk 同步索引到 Milvus 向量数据库
+     */
+    private void indexToVectorStore(Chunk chunk) {
+        try {
+            ragServiceClient.post()
+                    .uri("/api/vector/index")
+                    .bodyValue(java.util.Map.of(
+                            "id", chunk.getId(),
+                            "content", chunk.getContent(),
+                            "documentName", chunk.getDocumentName()
+                    ))
+                    .retrieve()
+                    .bodyToMono(Void.class)
+                    .block();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to index chunk to vector store: " + chunk.getId(), e);
+        }
     }
 
     public Page<ChunkDto> getChunks(int page, int size, String keyword) {
@@ -2337,7 +2371,7 @@ git commit -m "chore: complete RAG knowledge base system v1.0"
 
 ---
 
-**Plan complete and saved to `docs/plans/2026-03-19-rag-knowledge-base-design.md`.**
+**Plan complete and saved to `docs/plans/2026-03-19-rag-knowledge-base-implementation-plan.md`.**
 
 Two execution options:
 
