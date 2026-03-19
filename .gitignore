@@ -4,6 +4,9 @@ target/
 *.war
 *.ear
 
+# Node
+node_modules/
+
 # IDE
 .idea/
 *.iml
