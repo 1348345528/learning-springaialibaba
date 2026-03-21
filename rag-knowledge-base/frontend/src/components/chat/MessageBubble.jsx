@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button, message, Tooltip } from 'antd';
+import { marked } from 'marked';
 import {
   CopyOutlined,
   CheckOutlined,
@@ -7,6 +8,26 @@ import {
   CompressOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
+
+// 配置 marked 选项
+marked.setOptions({
+  breaks: true,      // 转换 GFM 换行符为 <br>
+  gfm: true,         // 启用 GitHub 风格的 Markdown
+});
+
+// 自定义渲染规则，确保列表和标题正确显示
+const renderer = new marked.Renderer();
+
+// 确保列表项正确渲染
+renderer.listitem = function(text) {
+  // 检查是否包含任务列表（checkbox）
+  if (text.includes('<input')) {
+    return `<li class="task-list-item">${text}</li>\n`;
+  }
+  return `<li>${text}</li>\n`;
+};
+
+marked.use({ renderer });
 
 const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
   const [expanded, setExpanded] = useState(false);
@@ -33,6 +54,27 @@ const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
   const renderContent = (content, collapse) => {
     if (!content) return null;
 
+    // AI 消息使用 Markdown 渲染
+    if (!isUser) {
+      const markdownContent = collapse
+        ? lines.slice(0, LINE_COUNT_THRESHOLD).join('\n') + '\n...'
+        : content;
+
+      // 使用 marked 解析 Markdown
+      const htmlContent = marked.parse(markdownContent);
+
+      return (
+        <div
+          className="markdown-body"
+          style={{ fontSize: 14, lineHeight: '22px' }}
+          dangerouslySetInnerHTML={{ __html: htmlContent }}
+        >
+          {isStreaming && <span style={{ display: 'inline-block', animation: 'blink 1s infinite' }}>|</span>}
+        </div>
+      );
+    }
+
+    // 用户消息保持纯文本
     const displayContent = collapse
       ? lines.slice(0, LINE_COUNT_THRESHOLD).join('\n') + '\n...'
       : content;

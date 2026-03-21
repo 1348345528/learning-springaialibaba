@@ -79,9 +79,10 @@ export const vectorApi = {
 
 // ========== SSE 事件块解析工具 ==========
 // 解析 SSE 事件块
-// 支持两种格式：
-// 1. data:content\n\n (标准 SSE)
-// 2. data:content\ndata:content2\ndata:[DONE]\n (无空行的多事件)
+// 标准 SSE 格式：
+// 1. data:content\n\n (单个事件)
+// 2. data:first line\ndata:second line\n\n (同一事件的多个data行用换行连接)
+// 3. 事件之间用空行分隔
 export function extractSseEventBlocks(text, remainder = '') {
   const blocks = [];
   // 将上次的 remainder 拼接到文本前面
@@ -94,7 +95,7 @@ export function extractSseEventBlocks(text, remainder = '') {
   while (i < lines.length) {
     const line = lines[i];
 
-    // 跳过空行
+    // 跳过空行（事件分隔符）
     if (!line.trim()) {
       i++;
       continue;
@@ -105,20 +106,29 @@ export function extractSseEventBlocks(text, remainder = '') {
       // 提取 data: 后面的内容
       let dataContent = line.slice(5); // 去掉 "data:"
 
-      // 检查下一个非空行
+      // 同一事件的多个 data: 行用换行连接
+      // 空行才表示事件结束
       let j = i + 1;
-      while (j < lines.length && !lines[j].startsWith('data:')) {
-        // 如果下一行不是 data:，可能是内容的一部分（换行）
-        if (lines[j].trim()) {
-          dataContent += '\n' + lines[j];
+      while (j < lines.length) {
+        const nextLine = lines[j];
+
+        // 如果遇到空行，说明事件结束
+        if (!nextLine.trim()) {
+          break;
         }
+
+        // 如果遇到新的 data: 行，说明当前事件结束
+        if (nextLine.startsWith('data:')) {
+          break;
+        }
+
+        // 否则，这是同一事件的延续内容（换行）
+        dataContent += '\n' + nextLine;
         j++;
       }
 
-      // 更新索引（跳过已处理的非 data: 行）
-      if (j > i + 1) {
-        i = j - 1;
-      }
+      // 更新索引
+      i = j;
 
       // 去掉前导空格但保留内部换行
       dataContent = dataContent.replace(/^\s+/, '');
@@ -126,26 +136,34 @@ export function extractSseEventBlocks(text, remainder = '') {
       if (dataContent) {
         blocks.push(dataContent);
       }
+    } else {
+      // 非 data: 行，跳过（可能是 event: 或其他字段）
+      i++;
     }
-    i++;
   }
 
-  // 计算未处理的 remainder（最后一行如果不以 data: 结尾，可能是被截断的）
+  // 计算未处理的 remainder
   let newRemainder = '';
   const lastLine = lines[lines.length - 1];
+
   if (lastLine && !lastLine.trim()) {
     // 最后一行是空行，说明完整的块都已处理
     newRemainder = '';
   } else if (lastLine && !lastLine.startsWith('data:')) {
-    // 最后一行不是 data: 开头，可能是未完成的 content 行
+    // 最后一行不是 data: 开头，可能是被截断的非 data: 行
     newRemainder = lastLine;
-  } else if (lastLine && lastLine.startsWith('data:') && !lastLine.includes('[DONE]') && lines[lines.length - 2]?.trim()) {
-    // 最后一行是 data: 但可能不完整（比如只有 "data:" 没有内容）
-    // 检查是否所有行都被处理了
-    const processedAny = blocks.length > 0;
-    if (!processedAny && remainder === '' && lastLine === 'data:') {
-      newRemainder = '';
+  } else if (lastLine && lastLine.startsWith('data:')) {
+    // 最后一行是 data: 开头
+    const dataContent = lastLine.slice(5);
+    if (dataContent.trim() === '') {
+      // 只有 "data:" 没有内容，等待更多数据
+      newRemainder = lastLine;
+    } else if (!lastLine.includes('[DONE]')) {
+      // 有内容但不是 [DONE]，可能是不完整的数据块
+      // 保留以便下次处理
+      newRemainder = lastLine;
     }
+    // 如果是 [DONE]，不需要保留
   }
 
   return { blocks, remainder: newRemainder };
@@ -201,6 +219,7 @@ export const chatApi = {
           // 处理最后可能剩余的内容
           const remainingText = xhr.responseText.slice(lastProcessedLength);
           const { blocks } = extractSseEventBlocks(remainingText, remainder);
+
           for (const content of blocks) {
             if (content === '[DONE]') continue;
             try {

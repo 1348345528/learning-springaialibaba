@@ -10,6 +10,7 @@ import {
 import DocumentUpload from './pages/DocumentUpload';
 import ChunkManagement from './pages/ChunkManagement';
 import ChatQA from './pages/ChatQA';
+import './styles/markdown.css';
 
 const { Header, Content, Sider } = Layout;
 const { Title } = Typography;
