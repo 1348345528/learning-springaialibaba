@@ -70,7 +70,7 @@ export const vectorApi = {
     return apiClient.delete(`/doc/chunks/${id}`);
   },
   batchDeleteChunks: (ids) => {
-    return apiClient.post('/doc/chunks/batch-delete', { ids });
+    return apiClient.delete('/doc/chunks/batch', { data: ids });
   },
   reindex: (documentId) => {
     return apiClient.post(`/doc/${documentId}/reindex`);
@@ -79,94 +79,68 @@ export const vectorApi = {
 
 // ========== SSE 事件块解析工具 ==========
 // 解析 SSE 事件块
-// 标准 SSE 格式：
-// 1. data:content\n\n (单个事件)
-// 2. data:first line\ndata:second line\n\n (同一事件的多个data行用换行连接)
-// 3. 事件之间用空行分隔
+// 标准 SSE 格式：每个 data: 行是完整内容片段，用空行分隔事件
+// 所有 data: 内容被拼接在一起，只有 [DONE] 单独返回
 export function extractSseEventBlocks(text, remainder = '') {
-  const blocks = [];
   // 将上次的 remainder 拼接到文本前面
   const content = remainder + text;
 
   // 分割行
   const lines = content.split('\n');
 
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
+  let fullContent = '';  // 累积所有 data: 内容
+  let hasDone = false;   // 是否收到 [DONE]
 
-    // 跳过空行（事件分隔符）
+  for (const line of lines) {
+    // 跳过空行
     if (!line.trim()) {
-      i++;
       continue;
     }
 
     // 检查是否是 data: 行
     if (line.startsWith('data:')) {
-      // 提取 data: 后面的内容
-      let dataContent = line.slice(5); // 去掉 "data:"
+      const dataContent = line.slice(5).replace(/^\s+/, ''); // 去掉 "data:" 和前导空格
 
-      // 同一事件的多个 data: 行用换行连接
-      // 空行才表示事件结束
-      let j = i + 1;
-      while (j < lines.length) {
-        const nextLine = lines[j];
-
-        // 如果遇到空行，说明事件结束
-        if (!nextLine.trim()) {
-          break;
+      if (dataContent === '[DONE]') {
+        hasDone = true;
+      } else if (dataContent) {
+        // 拼接内容，用换行分隔
+        if (fullContent) {
+          fullContent += '\n' + dataContent;
+        } else {
+          fullContent = dataContent;
         }
-
-        // 如果遇到新的 data: 行，说明当前事件结束
-        if (nextLine.startsWith('data:')) {
-          break;
-        }
-
-        // 否则，这是同一事件的延续内容（换行）
-        dataContent += '\n' + nextLine;
-        j++;
       }
-
-      // 更新索引
-      i = j;
-
-      // 去掉前导空格但保留内部换行
-      dataContent = dataContent.replace(/^\s+/, '');
-
-      if (dataContent) {
-        blocks.push(dataContent);
-      }
-    } else {
-      // 非 data: 行，跳过（可能是 event: 或其他字段）
-      i++;
     }
+    // 非 data: 行，跳过
   }
 
   // 计算未处理的 remainder
   let newRemainder = '';
   const lastLine = lines[lines.length - 1];
 
-  if (lastLine && !lastLine.trim()) {
-    // 最后一行是空行，说明完整的块都已处理
-    newRemainder = '';
-  } else if (lastLine && !lastLine.startsWith('data:')) {
-    // 最后一行不是 data: 开头，可能是被截断的非 data: 行
-    newRemainder = lastLine;
-  } else if (lastLine && lastLine.startsWith('data:')) {
-    // 最后一行是 data: 开头
+  if (lastLine && lastLine.trim() && lastLine.startsWith('data:')) {
     const dataContent = lastLine.slice(5);
-    if (dataContent.trim() === '') {
-      // 只有 "data:" 没有内容，等待更多数据
-      newRemainder = lastLine;
-    } else if (!lastLine.includes('[DONE]')) {
-      // 有内容但不是 [DONE]，可能是不完整的数据块
-      // 保留以便下次处理
+    // 如果最后一行是 data: 但没有内容或不完整，保留
+    if (dataContent.trim() === '' || (!hasDone && !lastLine.includes('[DONE]'))) {
       newRemainder = lastLine;
     }
-    // 如果是 [DONE]，不需要保留
   }
 
-  return { blocks, remainder: newRemainder };
+  // 如果收到 [DONE]，返回 [DONE] 作为单独块
+  if (hasDone) {
+    // 如果有累积内容，先返回内容块，再返回 [DONE] 块
+    if (fullContent) {
+      return { blocks: [fullContent, '[DONE]'], remainder: '' };
+    }
+    return { blocks: ['[DONE]'], remainder: '' };
+  }
+
+  // 返回累积的内容
+  if (fullContent) {
+    return { blocks: [fullContent], remainder: newRemainder };
+  }
+  return { blocks: [], remainder: newRemainder };
 }
 
 // ========== 聊天 API ==========

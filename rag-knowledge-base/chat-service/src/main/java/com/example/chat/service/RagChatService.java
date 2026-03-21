@@ -23,14 +23,16 @@ public class RagChatService {
     private final org.springframework.web.reactive.function.client.WebClient webClient;
 
     public Flux<ServerSentEvent<String>> chatStream(ChatRequest request) {
-        // 暂时跳过 RAG retrieval，直接调用 AI（用于测试中文问题）
-        String context = "You are a helpful AI assistant.";
+        // 从知识库检索相关知识块
+        List<RetrievalResult> chunks = retrieveChunks(request.getMessage(), 5).block();
+        String context = buildContext(chunks);
 
         // Build system prompt with context
         String systemPrompt = """
-            You are a helpful AI assistant.
+            You are a helpful AI assistant that answers questions based on the provided context from the knowledge base.
+            If the context doesn't contain relevant information, say you don't know based on the available information.
 
-            Context:
+            Context from knowledge base:
             %s
             """.formatted(context);
 
