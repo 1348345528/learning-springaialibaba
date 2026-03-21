@@ -125,10 +125,15 @@ rag-knowledge-base/
 │       ├── App.jsx                  # 根组件
 │       ├── pages/
 │       │   ├── DocumentUpload.jsx    # 文档上传页面
-│       │   └── ChunkManagement.jsx   # 知识块管理页面
-│       ├── services/
-│       │   └── api.js               # API 调用封装
-│       └── styles/                   # 样式文件
+│       │   ├── ChunkManagement.jsx   # 知识块管理页面
+│       │   └── ChatQA.jsx            # 智能问答页面
+│       ├── components/
+│       │   └── chat/                 # 聊天组件目录
+│       │       ├── ConversationList.jsx  # 对话列表组件
+│       │       ├── InputArea.jsx         # 输入区域组件
+│       │       └── MessageBubble.jsx     # 消息气泡组件
+│       └── services/
+│           └── api.js               # API 调用封装
 │
 └── docs/                              # 项目文档
     └── PROJECT_DESCRIPTION.md        # 项目描述文档（本文件）
@@ -275,6 +280,26 @@ app:
 - 查看/编辑/删除知识块
 - 批量删除
 - 重新向量化
+
+#### ChatQA（智能问答页面）
+
+**功能特性**：
+
+- 基于知识库的智能问答助手
+- 支持流式输出（SSE），实时显示 AI 回复
+- 支持 Markdown 渲染（标题、列表、代码块、表格等）
+- 支持特殊符号和 emoji 显示
+- 支持复制对话内容
+- 提供实时打字光标效果
+
+**技术实现**：
+
+- 前端通过 SSE（Server-Sent Events）接收流式响应
+- 流式传输过程中显示纯文本，光标闪烁提示数据正在传输
+- 流式结束后一次性渲染完整的 Markdown 内容
+- 使用剪贴板 API 实现一键复制回答内容
+- 输入框支持多行文本，提供非法字符、空输入、超长文本校验
+- 支持停止生成功能，可在流式输出过程中中断请求
 
 **Vite 代理配置**（vite.config.js）：
 

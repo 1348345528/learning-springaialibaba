@@ -31,9 +31,9 @@
           - log [ref=e35]:
             - generic [ref=e36]:
               - generic [ref=e38]: 第一条消息
-              - generic [ref=e40]: 00:55
+              - generic [ref=e40]: 01:26
             - generic [ref=e43]:
-              - generic [ref=e44]: 00:55
+              - generic [ref=e44]: 01:26
               - button "copy" [ref=e46] [cursor=pointer]:
                 - img "copy" [ref=e48]:
                   - img [ref=e49]

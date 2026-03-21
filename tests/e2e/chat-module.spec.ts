@@ -365,7 +365,20 @@ test.describe('5. 异常场景测试', () => {
     }, { timeout: 10000 });
 
     // 等待 React 完成状态更新
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
+
+    // Debug: 检查当前状态
+    const debugInfo = await page.evaluate(() => {
+      const textarea = document.querySelector('textarea[aria-label="问题输入框"]');
+      const resetBtn = document.querySelector('button[aria-label="清空对话"]');
+      return {
+        textareaValue: textarea ? textarea.value : null,
+        resetBtnDisabled: resetBtn ? resetBtn.disabled : null,
+        hasStopBtn: !!document.querySelector('button[aria-label="停止生成"]'),
+        hasSendBtn: !!document.querySelector('button[aria-label="发送消息"]'),
+      };
+    });
+    console.log('Debug info after streaming:', debugInfo);
 
     // 聚焦并使用 React 合成事件方式设置输入框值
     await textarea.focus();
@@ -379,12 +392,30 @@ test.describe('5. 异常场景测试', () => {
     // 验证 textarea 值已设置
     await expect(textarea).toHaveValue('测试清空');
 
+    // Debug: 检查设置后的状态
+    const debugInfo2 = await page.evaluate(() => {
+      const textarea = document.querySelector('textarea[aria-label="问题输入框"]');
+      return { textareaValue: textarea ? textarea.value : null };
+    });
+    console.log('Debug info after input:', debugInfo2);
+
     // 重置按钮应该启用（因为 messageCount > 0）
     const resetButton = page.locator('button[aria-label="清空对话"]');
     await expect(resetButton).toBeEnabled({ timeout: 5000 });
 
-    // 点击重置按钮
-    await resetButton.click();
+    // 使用 JS click 确保事件被触发
+    await page.evaluate(() => {
+      const btn = document.querySelector('button[aria-label="清空对话"]');
+      console.log('Clicking reset button, disabled:', btn.disabled);
+      btn.click();
+    });
+
+    // 等待弹窗出现
+    await page.waitForTimeout(500);
+
+    // Debug: 检查弹窗状态
+    const hasModal = await page.locator('.ant-modal').count();
+    console.log('Modal count after click:', hasModal);
 
     // 应该出现确认弹窗
     const confirmModal = page.locator('.ant-modal');
