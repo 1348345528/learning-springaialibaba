@@ -1,0 +1,69 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - img "file-text" [ref=e5]:
+        - img [ref=e6]
+      - heading "RAG 知识库系统" [level=4] [ref=e8]
+    - generic [ref=e9]:
+      - complementary [ref=e10]:
+        - menu [ref=e12]:
+          - menuitem "upload 文档上传" [ref=e13] [cursor=pointer]:
+            - img "upload" [ref=e14]:
+              - img [ref=e15]
+            - generic [ref=e17]: 文档上传
+          - menuitem "database 知识块管理" [ref=e18] [cursor=pointer]:
+            - img "database" [ref=e19]:
+              - img [ref=e20]
+            - generic [ref=e22]: 知识块管理
+          - menuitem "robot 智能问答" [ref=e23] [cursor=pointer]:
+            - img "robot" [ref=e24]:
+              - img [ref=e25]
+            - generic [ref=e27]: 智能问答
+      - main [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]:
+            - heading "智能问答" [level=3] [ref=e32]
+            - text: 基于知识库的智能问答助手
+            - separator [ref=e33]
+          - log [ref=e35]:
+            - generic [ref=e36]:
+              - generic [ref=e38]: 第一条消息
+              - generic [ref=e40]: 00:55
+            - generic [ref=e43]:
+              - generic [ref=e44]: 00:55
+              - button "copy" [ref=e46] [cursor=pointer]:
+                - img "copy" [ref=e48]:
+                  - img [ref=e49]
+          - generic [ref=e52]:
+            - textbox "问题输入框" [ref=e55]:
+              - /placeholder: 请输入您的问题，按 Enter 发送...
+              - text: 测试清空
+            - generic [ref=e57]:
+              - generic [ref=e58]: 4/500
+              - generic [ref=e59]:
+                - button "发送消息" [ref=e61] [cursor=pointer]:
+                  - img "send" [ref=e63]:
+                    - img [ref=e64]
+                  - generic [ref=e66]: 发送
+                - button "清空对话" [ref=e68] [cursor=pointer]:
+                  - img "clear" [ref=e70]:
+                    - img [ref=e71]
+                  - generic [ref=e73]: 重置
+  - generic [ref=e74]:
+    - dialog "确认清空":
+      - generic [ref=e75]:
+        - button "Close" [ref=e76] [cursor=pointer]:
+          - generic "Close" [ref=e77]:
+            - img "close" [ref=e78]:
+              - img [ref=e79]
+        - generic [ref=e82]: 确认清空
+        - paragraph [ref=e84]: 确认清空对话记录？此操作不可恢复。
+        - generic [ref=e85]:
+          - button "取 消" [ref=e86] [cursor=pointer]:
+            - generic [ref=e87]: 取 消
+          - button "确 认" [ref=e88] [cursor=pointer]:
+            - generic [ref=e89]: 确 认
+```

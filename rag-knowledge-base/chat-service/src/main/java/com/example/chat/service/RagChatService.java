@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -21,32 +22,33 @@ public class RagChatService {
     private final ChatModel miniMaxChatModel;
     private final org.springframework.web.reactive.function.client.WebClient webClient;
 
-    public Flux<String> chatStream(ChatRequest request) {
-        // Call RAG retrieval service to get relevant chunks
-        Mono<List<RetrievalResult>> chunksMono = retrieveChunks(request.getMessage(), request.getTopK());
+    public Flux<ServerSentEvent<String>> chatStream(ChatRequest request) {
+        // 暂时跳过 RAG retrieval，直接调用 AI（用于测试中文问题）
+        String context = "You are a helpful AI assistant.";
 
-        return chunksMono.flatMapMany(chunks -> {
-            // Build context from chunks
-            String context = buildContext(chunks);
+        // Build system prompt with context
+        String systemPrompt = """
+            You are a helpful AI assistant.
 
-            // Build system prompt with context
-            String systemPrompt = """
-                You are a helpful AI assistant. Use the following context to answer the user's question.
-                If the context doesn't contain relevant information, say so.
+            Context:
+            %s
+            """.formatted(context);
 
-                Context:
-                %s
-                """.formatted(context);
+        // Stream response with proper SSE format
+        Flux<String> tokenFlux = ChatClient.builder(miniMaxChatModel)
+                .build()
+                .prompt()
+                .system(systemPrompt)
+                .user(request.getMessage())
+                .stream()
+                .content();
 
-            // Stream response
-            return ChatClient.builder(miniMaxChatModel)
-                    .build()
-                    .prompt()
-                    .system(systemPrompt)
-                    .user(request.getMessage())
-                    .stream()
-                    .content();
-        });
+        // 在流结束时添加 [DONE] 标记
+        // 注意：不要在每个token后添加空格，这会破坏包含换行符的格式
+        // 空格应该由前端根据上下文自行处理
+        return tokenFlux
+                .map(token -> ServerSentEvent.builder(token).build())
+                .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").build()));
     }
 
     private Mono<List<RetrievalResult>> retrieveChunks(String query, int topK) {

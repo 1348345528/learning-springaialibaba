@@ -4,6 +4,7 @@ import com.example.doc.entity.Chunk;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -18,4 +19,7 @@ public interface ChunkRepository extends JpaRepository<Chunk, String> {
     void deleteByDocumentName(String documentName);
 
     long countByDocumentName(String documentName);
+
+    @Query("SELECT DISTINCT c.documentName FROM Chunk c ORDER BY c.documentName")
+    List<String> findDistinctDocumentNames();
 }

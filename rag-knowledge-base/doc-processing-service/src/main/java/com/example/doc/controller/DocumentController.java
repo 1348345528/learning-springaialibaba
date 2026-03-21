@@ -41,6 +41,11 @@ public class DocumentController {
         return documentService.getChunks(page, size, keyword);
     }
 
+    @GetMapping("/documents")
+    public List<String> getDocumentNames() {
+        return documentService.getDocumentNames();
+    }
+
     @GetMapping("/chunks/{id}")
     public ChunkDto getChunk(@PathVariable String id) {
         return documentService.getChunk(id);

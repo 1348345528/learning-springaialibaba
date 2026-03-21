@@ -72,8 +72,9 @@ const ChunkManagement = () => {
   // 加载文档列表（用于筛选）
   const loadDocuments = async () => {
     try {
-      const response = await documentApi.list({ page: 0, size: 100 });
-      setDocuments(response.content || []);
+      const response = await documentApi.list();
+      // /doc/documents 返回字符串数组，直接使用
+      setDocuments(Array.isArray(response) ? response : []);
     } catch (error) {
       console.error('加载文档列表失败', error);
     }
@@ -288,9 +289,9 @@ const ChunkManagement = () => {
             value={filters.documentId}
             onChange={(value) => setFilters({ ...filters, documentId: value })}
             style={{ width: 200 }}
-            options={documents.map((doc) => ({
-              value: doc.id,
-              label: doc.fileName || doc.id,
+            options={documents.map((docName) => ({
+              value: docName,
+              label: docName,
             }))}
           />
           <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>

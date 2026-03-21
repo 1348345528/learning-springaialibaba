@@ -3,13 +3,13 @@ import { ConfigProvider, Layout, Menu, Typography } from 'antd';
 import {
   UploadOutlined,
   DatabaseOutlined,
-  MessageOutlined,
   FileTextOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 
 import DocumentUpload from './pages/DocumentUpload';
 import ChunkManagement from './pages/ChunkManagement';
-import ChatTest from './pages/ChatTest';
+import ChatQA from './pages/ChatQA';
 
 const { Header, Content, Sider } = Layout;
 const { Title } = Typography;
@@ -39,8 +39,8 @@ const App = () => {
     },
     {
       key: 'chat',
-      icon: <MessageOutlined />,
-      label: '问答测试',
+      icon: <RobotOutlined />,
+      label: '智能问答',
     },
   ];
 
@@ -52,7 +52,7 @@ const App = () => {
       case 'chunks':
         return <ChunkManagement />;
       case 'chat':
-        return <ChatTest />;
+        return <ChatQA />;
       default:
         return <DocumentUpload />;
     }

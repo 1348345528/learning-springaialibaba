@@ -112,6 +112,10 @@ public class DocumentService {
         return chunkPage.map(this::toDto);
     }
 
+    public List<String> getDocumentNames() {
+        return chunkRepository.findDistinctDocumentNames();
+    }
+
     public ChunkDto getChunk(String id) {
         return toDto(chunkRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Chunk not found: " + id)));
