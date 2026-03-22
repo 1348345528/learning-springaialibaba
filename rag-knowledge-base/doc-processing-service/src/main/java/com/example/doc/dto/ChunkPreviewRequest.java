@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 
 /**
  * 分块预览请求 DTO
@@ -62,9 +63,9 @@ public class ChunkPreviewRequest {
     private Boolean keepSeparator;
 
     /**
-     * 自定义分隔符（JSON 数组格式）
+     * 自定义分隔符列表
      */
-    private String separators;
+    private List<String> separators;
 
     // ========== 语义分块参数 ==========
 

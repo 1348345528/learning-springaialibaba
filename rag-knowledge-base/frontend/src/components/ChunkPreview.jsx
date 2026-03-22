@@ -41,7 +41,7 @@ const getChunkTypeColor = (type) => {
 };
 
 // 单个分块卡片
-const ChunkCard = ({ chunk, index, defaultExpanded }) => {
+const ChunkCard = ({ chunk, index, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState(false);
 
@@ -180,11 +180,7 @@ ChunkCard.propTypes = {
   defaultExpanded: PropTypes.bool,
 };
 
-ChunkCard.defaultProps = {
-  defaultExpanded: false,
-};
-
-const ChunkPreview = ({ chunks, loading, error, defaultExpanded }) => {
+const ChunkPreview = ({ chunks = [], loading = false, error = null, defaultExpanded = false }) => {
   const [expandAll, setExpandAll] = useState(false);
 
   // 空状态
@@ -266,13 +262,6 @@ ChunkPreview.propTypes = {
   loading: PropTypes.bool,
   error: PropTypes.string,
   defaultExpanded: PropTypes.bool,
-};
-
-ChunkPreview.defaultProps = {
-  chunks: [],
-  loading: false,
-  error: null,
-  defaultExpanded: false,
 };
 
 export default ChunkPreview;

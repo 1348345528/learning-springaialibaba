@@ -71,7 +71,7 @@ const STRATEGIES = [
   },
 ];
 
-const ChunkStrategySelector = ({ value, onChange, disabled }) => {
+const ChunkStrategySelector = ({ value = 'recursive', onChange, disabled = false }) => {
   return (
     <div>
       <Row gutter={[16, 16]}>
@@ -216,11 +216,6 @@ ChunkStrategySelector.propTypes = {
   ]),
   onChange: PropTypes.func.isRequired,
   disabled: PropTypes.bool,
-};
-
-ChunkStrategySelector.defaultProps = {
-  value: 'recursive',
-  disabled: false,
 };
 
 export default ChunkStrategySelector;

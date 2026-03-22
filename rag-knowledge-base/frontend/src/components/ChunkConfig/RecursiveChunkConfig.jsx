@@ -38,7 +38,19 @@ const DEFAULT_SEPARATORS = [
   { value: '', label: '字符' },
 ];
 
-const RecursiveChunkConfig = ({ config, onChange, disabled }) => {
+// 默认配置
+const DEFAULT_CONFIG = {
+  chunkSize: 500,
+  overlap: 50,
+  minChunkSize: 50,
+  keepSeparator: true,
+  separators: DEFAULT_SEPARATORS.map((s) => s.value),
+};
+
+const RecursiveChunkConfig = ({ config: propConfig, onChange, disabled = false }) => {
+  // 合并默认配置
+  const config = { ...DEFAULT_CONFIG, ...propConfig };
+
   const [separators, setSeparators] = useState(
     config.separators || DEFAULT_SEPARATORS.map((s) => s.value)
   );
@@ -47,7 +59,8 @@ const RecursiveChunkConfig = ({ config, onChange, disabled }) => {
   // 处理配置变更
   const handleChange = (key, value) => {
     onChange({
-      ...config,
+      ...DEFAULT_CONFIG,
+      ...propConfig,
       [key]: value,
     });
   };
@@ -291,17 +304,6 @@ RecursiveChunkConfig.propTypes = {
   }),
   onChange: PropTypes.func.isRequired,
   disabled: PropTypes.bool,
-};
-
-RecursiveChunkConfig.defaultProps = {
-  config: {
-    chunkSize: 500,
-    overlap: 50,
-    minChunkSize: 50,
-    keepSeparator: true,
-    separators: ['\n\n', '\n', '。', '！', '？', '；', '，', ' ', ''],
-  },
-  disabled: false,
 };
 
 export default RecursiveChunkConfig;

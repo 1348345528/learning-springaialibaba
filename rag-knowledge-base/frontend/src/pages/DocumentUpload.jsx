@@ -16,6 +16,7 @@ import {
   Row,
   Col,
   Steps,
+  Tag,
 } from 'antd';
 import {
   InboxOutlined,
@@ -166,12 +167,18 @@ const DocumentUpload = () => {
     setPreviewChunks([]);
 
     try {
-      const formData = new FormData();
-      formData.append('file', fileList[0]);
-      formData.append('strategy', strategy);
-      formData.append('config', JSON.stringify(config));
+      // 读取文件内容
+      const file = fileList[0].originFileObj || fileList[0];
+      const content = await readFileContent(file);
 
-      const result = await chunkApi.preview(formData);
+      // 构建 JSON 请求体
+      const requestData = {
+        content,
+        strategy,
+        ...config,
+      };
+
+      const result = await chunkApi.preview(requestData);
 
       if (result && result.chunks) {
         setPreviewChunks(result.chunks);
@@ -187,6 +194,16 @@ const DocumentUpload = () => {
     } finally {
       setPreviewLoading(false);
     }
+  };
+
+  // 读取文件内容
+  const readFileContent = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = (e) => reject(new Error('读取文件失败'));
+      reader.readAsText(file);
+    });
   };
 
   // 处理上传

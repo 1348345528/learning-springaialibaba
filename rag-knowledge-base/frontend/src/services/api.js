@@ -87,17 +87,13 @@ export const vectorApi = {
 
 // ========== 分块预览与配置 API ==========
 export const chunkApi = {
-  // 分块预览
+  // 分块预览（发送 JSON 格式）
   preview: (data) => {
-    return apiClient.post('/doc/preview', data, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    return apiClient.post('/chunk/preview', data);
   },
   // 获取策略默认配置
   getStrategyConfigs: () => {
-    return apiClient.get('/doc/config/defaults');
+    return apiClient.get('/chunk/preview/strategies');
   },
 };
 

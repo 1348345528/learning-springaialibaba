@@ -63,6 +63,17 @@ public class ChunkPreviewService {
             case "hierarchical":
                 chunks = previewHierarchical(content, request, statistics);
                 break;
+            case "fixed_length":
+                chunks = previewFixedLength(content, request, statistics);
+                break;
+            case "hybrid":
+                // 混合分块：使用递归分块作为基础
+                chunks = previewRecursive(content, request, statistics);
+                break;
+            case "custom_rule":
+                // 自定义规则：使用递归分块，支持自定义分隔符
+                chunks = previewRecursive(content, request, statistics);
+                break;
             default:
                 throw new IllegalArgumentException("不支持的分块策略: " + strategy);
         }
@@ -119,6 +130,46 @@ public class ChunkPreviewService {
     }
 
     /**
+     * 使用固定长度分块策略预览
+     */
+    private List<TextChunk> previewFixedLength(String content, ChunkPreviewRequest request,
+                                                Map<String, Object> statistics) {
+        int chunkSize = request.getChunkSize() != null ? request.getChunkSize() : 500;
+        int overlap = request.getOverlap() != null ? request.getOverlap() : 0;
+
+        List<TextChunk> chunks = new ArrayList<>();
+        int start = 0;
+        int index = 0;
+
+        while (start < content.length()) {
+            int end = Math.min(start + chunkSize, content.length());
+            String chunkContent = content.substring(start, end);
+
+            TextChunk chunk = TextChunk.builder()
+                    .content(chunkContent)
+                    .index(index)
+                    .startPos(start)
+                    .endPos(end)
+                    .build();
+            chunks.add(chunk);
+
+            start = end - overlap;
+            if (start <= chunks.get(chunks.size() - 1).getStartPos()) {
+                start = end; // 避免无限循环
+            }
+            index++;
+        }
+
+        statistics.put("config", Map.of(
+                "chunkSize", chunkSize,
+                "overlap", overlap,
+                "totalChunks", chunks.size()
+        ));
+
+        return chunks;
+    }
+
+    /**
      * 构建递归分块配置
      */
     private RecursiveChunkConfig buildRecursiveConfig(ChunkPreviewRequest request) {
@@ -130,12 +181,7 @@ public class ChunkPreviewService {
         if (request.getKeepSeparator() != null) builder.keepSeparator(request.getKeepSeparator());
 
         if (request.getSeparators() != null && !request.getSeparators().isEmpty()) {
-            try {
-                List<String> separators = JSON.parseArray(request.getSeparators(), String.class);
-                builder.separators(separators);
-            } catch (Exception e) {
-                log.warn("解析分隔符失败: {}", e.getMessage());
-            }
+            builder.separators(request.getSeparators());
         }
 
         return builder.build();

@@ -41,17 +41,29 @@ const CHILD_SPLIT_STRATEGIES = [
   },
 ];
 
-const HierarchicalChunkConfig = ({ config, onChange, disabled }) => {
+// 默认配置
+const DEFAULT_CONFIG = {
+  parentChunkSize: 2000,
+  parentOverlap: 200,
+  childChunkSize: 200,
+  childOverlap: 20,
+  childSplitStrategy: 'RECURSIVE',
+};
+
+const HierarchicalChunkConfig = ({ config = DEFAULT_CONFIG, onChange, disabled = false }) => {
+  // 合并默认配置
+  const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+
   // 处理配置变更
   const handleChange = (key, value) => {
     onChange({
-      ...config,
+      ...mergedConfig,
       [key]: value,
     });
   };
 
-  const parentSize = config.parentChunkSize || 2000;
-  const childSize = config.childChunkSize || 200;
+  const parentSize = mergedConfig.parentChunkSize || 2000;
+  const childSize = mergedConfig.childChunkSize || 200;
 
   return (
     <div>
@@ -179,7 +191,7 @@ const HierarchicalChunkConfig = ({ config, onChange, disabled }) => {
             <InputNumber
               min={0}
               max={Math.floor(parentSize / 4)}
-              value={config.parentOverlap || 200}
+              value={mergedConfig.parentOverlap || 200}
               onChange={(value) => handleChange('parentOverlap', value)}
               style={{ width: '100%' }}
               addonAfter="字符"
@@ -230,7 +242,7 @@ const HierarchicalChunkConfig = ({ config, onChange, disabled }) => {
             <InputNumber
               min={0}
               max={Math.floor(childSize / 4)}
-              value={config.childOverlap || 20}
+              value={mergedConfig.childOverlap || 20}
               onChange={(value) => handleChange('childOverlap', value)}
               style={{ width: '100%' }}
               addonAfter="字符"
@@ -240,7 +252,7 @@ const HierarchicalChunkConfig = ({ config, onChange, disabled }) => {
           {/* 子块分割策略 */}
           <Form.Item label={<Text>子块分割策略</Text>}>
             <Radio.Group
-              value={config.childSplitStrategy || 'RECURSIVE'}
+              value={mergedConfig.childSplitStrategy || 'RECURSIVE'}
               onChange={(e) => handleChange('childSplitStrategy', e.target.value)}
             >
               <Space direction="vertical">
@@ -290,7 +302,7 @@ const HierarchicalChunkConfig = ({ config, onChange, disabled }) => {
               <Text type="secondary">父块配置：</Text>
               <Space size={[8, 8]} wrap>
                 <Tag color="blue">大小: {parentSize}</Tag>
-                <Tag color="blue">重叠: {config.parentOverlap || 200}</Tag>
+                <Tag color="blue">重叠: {mergedConfig.parentOverlap || 200}</Tag>
               </Space>
             </Space>
           </Col>
@@ -299,11 +311,11 @@ const HierarchicalChunkConfig = ({ config, onChange, disabled }) => {
               <Text type="secondary">子块配置：</Text>
               <Space size={[8, 8]} wrap>
                 <Tag color="green">大小: {childSize}</Tag>
-                <Tag color="green">重叠: {config.childOverlap || 20}</Tag>
+                <Tag color="green">重叠: {mergedConfig.childOverlap || 20}</Tag>
                 <Tag color="purple">
                   策略:{' '}
                   {CHILD_SPLIT_STRATEGIES.find(
-                    (s) => s.value === (config.childSplitStrategy || 'RECURSIVE')
+                    (s) => s.value === (mergedConfig.childSplitStrategy || 'RECURSIVE')
                   )?.label || '递归分割'}
                 </Tag>
               </Space>
@@ -325,17 +337,6 @@ HierarchicalChunkConfig.propTypes = {
   }),
   onChange: PropTypes.func.isRequired,
   disabled: PropTypes.bool,
-};
-
-HierarchicalChunkConfig.defaultProps = {
-  config: {
-    parentChunkSize: 2000,
-    parentOverlap: 200,
-    childChunkSize: 200,
-    childOverlap: 20,
-    childSplitStrategy: 'RECURSIVE',
-  },
-  disabled: false,
 };
 
 export default HierarchicalChunkConfig;

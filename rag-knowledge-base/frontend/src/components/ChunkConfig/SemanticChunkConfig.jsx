@@ -45,11 +45,25 @@ const BREAKPOINT_METHODS = [
   },
 ];
 
-const SemanticChunkConfig = ({ config, onChange, disabled }) => {
+// 默认配置
+const DEFAULT_CONFIG = {
+  similarityThreshold: 0.45,
+  useDynamicThreshold: true,
+  percentileThreshold: 0.8,
+  breakpointMethod: 'PERCENTILE',
+  minChunkSize: 100,
+  maxChunkSize: 2000,
+};
+
+const SemanticChunkConfig = ({ config: propConfig, onChange, disabled = false }) => {
+  // 合并默认配置
+  const config = { ...DEFAULT_CONFIG, ...propConfig };
+
   // 处理配置变更
   const handleChange = (key, value) => {
     onChange({
-      ...config,
+      ...DEFAULT_CONFIG,
+      ...propConfig,
       [key]: value,
     });
   };
@@ -269,18 +283,6 @@ SemanticChunkConfig.propTypes = {
   }),
   onChange: PropTypes.func.isRequired,
   disabled: PropTypes.bool,
-};
-
-SemanticChunkConfig.defaultProps = {
-  config: {
-    similarityThreshold: 0.45,
-    useDynamicThreshold: true,
-    percentileThreshold: 0.8,
-    breakpointMethod: 'PERCENTILE',
-    minChunkSize: 100,
-    maxChunkSize: 2000,
-  },
-  disabled: false,
 };
 
 export default SemanticChunkConfig;

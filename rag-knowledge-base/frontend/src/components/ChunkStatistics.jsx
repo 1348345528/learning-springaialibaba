@@ -69,7 +69,7 @@ const calculateStatistics = (chunks) => {
   };
 };
 
-const ChunkStatistics = ({ chunks, loading }) => {
+const ChunkStatistics = ({ chunks = [], loading = false }) => {
   const stats = useMemo(() => calculateStatistics(chunks), [chunks]);
 
   if (stats.totalChunks === 0) {
@@ -218,11 +218,6 @@ ChunkStatistics.propTypes = {
     })
   ),
   loading: PropTypes.bool,
-};
-
-ChunkStatistics.defaultProps = {
-  chunks: [],
-  loading: false,
 };
 
 export default ChunkStatistics;
