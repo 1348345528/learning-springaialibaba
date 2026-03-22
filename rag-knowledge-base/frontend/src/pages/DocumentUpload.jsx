@@ -1,52 +1,108 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Card,
   Upload,
   Button,
   Select,
   Input,
-  InputNumber,
   message,
   Progress,
   Space,
   Typography,
   Divider,
   Alert,
+  Tabs,
+  Spin,
+  Row,
+  Col,
+  Steps,
 } from 'antd';
 import {
   InboxOutlined,
   FileTextOutlined,
   CheckCircleOutlined,
+  EyeOutlined,
+  CloudUploadOutlined,
+  SettingOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
-import { documentApi } from '../services/api';
+import { documentApi, chunkApi } from '../services/api';
+
+// 组件导入
+import ChunkStrategySelector from '../components/ChunkStrategySelector';
+import RecursiveChunkConfig from '../components/ChunkConfig/RecursiveChunkConfig';
+import SemanticChunkConfig from '../components/ChunkConfig/SemanticChunkConfig';
+import HierarchicalChunkConfig from '../components/ChunkConfig/HierarchicalChunkConfig';
+import ChunkPreview from '../components/ChunkPreview';
+import ChunkStatistics from '../components/ChunkStatistics';
 
 const { Dragger } = Upload;
-const { Text, Title } = Typography;
-
+const { Text, Title, Paragraph } = Typography;
 const { TextArea } = Input;
 
-// 分块策略选项 - 必须与后端 ChunkStrategy 实现类匹配
-const CHUNK_STRATEGIES = [
-  { value: 'fixed_length', label: '固定长度分块', description: '按固定字符数分块' },
-  { value: 'semantic', label: '语义分块', description: '按语义段落分块' },
-  { value: 'hybrid', label: '混合分块', description: '结合固定长度和语义分块' },
-  { value: 'custom_rule', label: '自定义规则分块', description: '按自定义分隔符分块' },
-];
-
-// 嵌入模型选项 - 与后端配置匹配
+// 嵌入模型选项
 const EMBED_MODELS = [
   { value: 'Qwen/Qwen3-Embedding-8B', label: 'Qwen3-Embedding-8B (4096维)' },
 ];
 
+// 默认配置
+const DEFAULT_CONFIGS = {
+  recursive: {
+    chunkSize: 500,
+    overlap: 50,
+    minChunkSize: 50,
+    keepSeparator: true,
+    separators: ['\n\n', '\n', '。', '！', '？', '；', '，', ' ', ''],
+  },
+  true_semantic: {
+    similarityThreshold: 0.45,
+    useDynamicThreshold: true,
+    percentileThreshold: 0.8,
+    breakpointMethod: 'PERCENTILE',
+    minChunkSize: 100,
+    maxChunkSize: 2000,
+  },
+  hierarchical: {
+    parentChunkSize: 2000,
+    parentOverlap: 200,
+    childChunkSize: 200,
+    childOverlap: 20,
+    childSplitStrategy: 'RECURSIVE',
+  },
+  fixed_length: {
+    chunkSize: 500,
+    overlap: 50,
+  },
+  hybrid: {
+    chunkSize: 500,
+    overlap: 50,
+    semanticThreshold: 0.5,
+  },
+  custom_rule: {
+    separators: ['\n\n', '\n'],
+    chunkSize: 500,
+  },
+};
+
 const DocumentUpload = () => {
+  // 状态管理
+  const [currentStep, setCurrentStep] = useState(0);
   const [fileList, setFileList] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [strategy, setStrategy] = useState('fixed_length');
-  const [chunkSize, setChunkSize] = useState(500);
-  const [chunkOverlap, setChunkOverlap] = useState(50);
+
+  // 分块配置
+  const [strategy, setStrategy] = useState('recursive');
+  const [config, setConfig] = useState(DEFAULT_CONFIGS.recursive);
   const [embedModel, setEmbedModel] = useState('Qwen/Qwen3-Embedding-8B');
   const [customPrompt, setCustomPrompt] = useState('');
+
+  // 预览相关
+  const [previewChunks, setPreviewChunks] = useState([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
+
+  // 上传结果
   const [uploadResult, setUploadResult] = useState(null);
 
   // 上传前校验
@@ -57,7 +113,8 @@ const DocumentUpload = () => {
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ];
-    const isAllowed = allowedTypes.some((type) => file.type.includes(type.split('/')[1])) ||
+    const isAllowed =
+      allowedTypes.some((type) => file.type.includes(type.split('/')[1])) ||
       file.name.endsWith('.md') ||
       file.name.endsWith('.txt') ||
       file.name.endsWith('.pdf') ||
@@ -76,10 +133,63 @@ const DocumentUpload = () => {
 
     setFileList([file]);
     setUploadResult(null);
+    setPreviewChunks([]);
+    setPreviewError(null);
+    setCurrentStep(1);
     return false;
   };
 
-  // 处理上传 - 使用 XMLHttpRequest 实现真实进度
+  // 处理策略变更
+  const handleStrategyChange = useCallback((newStrategy) => {
+    setStrategy(newStrategy);
+    setConfig(DEFAULT_CONFIGS[newStrategy] || {});
+    setPreviewChunks([]);
+    setPreviewError(null);
+  }, []);
+
+  // 处理配置变更
+  const handleConfigChange = useCallback((newConfig) => {
+    setConfig(newConfig);
+    setPreviewChunks([]);
+    setPreviewError(null);
+  }, []);
+
+  // 预览分块
+  const handlePreview = async () => {
+    if (fileList.length === 0) {
+      message.warning('请先选择文件');
+      return;
+    }
+
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewChunks([]);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', fileList[0]);
+      formData.append('strategy', strategy);
+      formData.append('config', JSON.stringify(config));
+
+      const result = await chunkApi.preview(formData);
+
+      if (result && result.chunks) {
+        setPreviewChunks(result.chunks);
+        setCurrentStep(2);
+        message.success(`预览成功，共 ${result.chunks.length} 个分块`);
+      } else {
+        throw new Error('预览结果格式错误');
+      }
+    } catch (error) {
+      console.error('预览失败:', error);
+      setPreviewError(error.message || '预览失败，请重试');
+      message.error(error.message || '预览失败，请重试');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // 处理上传
   const handleUpload = () => {
     if (fileList.length === 0) {
       message.warning('请先选择文件');
@@ -93,8 +203,7 @@ const DocumentUpload = () => {
     const formData = new FormData();
     formData.append('file', fileList[0]);
     formData.append('strategy', strategy);
-    formData.append('chunkSize', chunkSize);
-    formData.append('chunkOverlap', chunkOverlap);
+    formData.append('config', JSON.stringify(config));
     formData.append('embedModel', embedModel);
     if (customPrompt) {
       formData.append('customPrompt', customPrompt);
@@ -116,6 +225,7 @@ const DocumentUpload = () => {
         try {
           const result = JSON.parse(xhr.responseText);
           setUploadResult(result);
+          setCurrentStep(3);
           message.success('文档上传成功');
           setFileList([]);
         } catch (e) {
@@ -141,125 +251,341 @@ const DocumentUpload = () => {
     setFileList([]);
     setUploadResult(null);
     setUploadProgress(0);
+    setPreviewChunks([]);
+    setPreviewError(null);
+    setCurrentStep(0);
+    setStrategy('recursive');
+    setConfig(DEFAULT_CONFIGS.recursive);
+  };
+
+  // 渲染策略配置组件
+  const renderStrategyConfig = () => {
+    const commonProps = {
+      config,
+      onChange: handleConfigChange,
+      disabled: uploading,
+    };
+
+    switch (strategy) {
+      case 'recursive':
+        return <RecursiveChunkConfig {...commonProps} />;
+      case 'true_semantic':
+        return <SemanticChunkConfig {...commonProps} />;
+      case 'hierarchical':
+        return <HierarchicalChunkConfig {...commonProps} />;
+      case 'fixed_length':
+        return (
+          <Card size="small">
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <div>
+                <Text strong>分块大小</Text>
+                <Input
+                  type="number"
+                  min={100}
+                  max={4000}
+                  value={config.chunkSize || 500}
+                  onChange={(e) =>
+                    handleConfigChange({ ...config, chunkSize: parseInt(e.target.value) || 500 })
+                  }
+                  style={{ width: '100%', marginTop: 8 }}
+                  addonAfter="字符"
+                />
+              </div>
+              <div>
+                <Text strong>重叠大小</Text>
+                <Input
+                  type="number"
+                  min={0}
+                  max={config.chunkSize || 500}
+                  value={config.overlap || 50}
+                  onChange={(e) =>
+                    handleConfigChange({ ...config, overlap: parseInt(e.target.value) || 0 })
+                  }
+                  style={{ width: '100%', marginTop: 8 }}
+                  addonAfter="字符"
+                />
+              </div>
+            </Space>
+          </Card>
+        );
+      case 'hybrid':
+        return (
+          <Card size="small">
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <div>
+                <Text strong>基础分块大小</Text>
+                <Input
+                  type="number"
+                  min={100}
+                  max={4000}
+                  value={config.chunkSize || 500}
+                  onChange={(e) =>
+                    handleConfigChange({ ...config, chunkSize: parseInt(e.target.value) || 500 })
+                  }
+                  style={{ width: '100%', marginTop: 8 }}
+                  addonAfter="字符"
+                />
+              </div>
+              <div>
+                <Text strong>语义阈值</Text>
+                <Input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={config.semanticThreshold || 0.5}
+                  onChange={(e) =>
+                    handleConfigChange({
+                      ...config,
+                      semanticThreshold: parseFloat(e.target.value) || 0.5,
+                    })
+                  }
+                  style={{ width: '100%', marginTop: 8 }}
+                />
+              </div>
+            </Space>
+          </Card>
+        );
+      case 'custom_rule':
+        return (
+          <Card size="small">
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <div>
+                <Text strong>自定义分隔符（每行一个）</Text>
+                <TextArea
+                  value={(config.separators || []).join('\n')}
+                  onChange={(e) =>
+                    handleConfigChange({
+                      ...config,
+                      separators: e.target.value.split('\n').filter(Boolean),
+                    })
+                  }
+                  placeholder={'\\n\\n\n\\n\n。'}
+                  rows={4}
+                  style={{ marginTop: 8 }}
+                />
+              </div>
+              <div>
+                <Text strong>最大分块大小</Text>
+                <Input
+                  type="number"
+                  min={100}
+                  max={4000}
+                  value={config.chunkSize || 500}
+                  onChange={(e) =>
+                    handleConfigChange({ ...config, chunkSize: parseInt(e.target.value) || 500 })
+                  }
+                  style={{ width: '100%', marginTop: 8 }}
+                  addonAfter="字符"
+                />
+              </div>
+            </Space>
+          </Card>
+        );
+      default:
+        return null;
+    }
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }}>
       <Title level={3}>文档上传</Title>
-      <Text type="secondary">上传文档并配置分块和向量化参数</Text>
+      <Paragraph type="secondary">
+        上传文档并配置分块和向量化参数，支持多种智能分块策略
+      </Paragraph>
 
       <Divider />
 
-      {/* 上传区域 */}
-      <Card style={{ marginBottom: 24 }}>
-        <Dragger
-          name="file"
-          beforeUpload={beforeUpload}
-          fileList={fileList}
-          onRemove={() => {
-            setFileList([]);
-            setUploadResult(null);
-          }}
-          accept=".txt,.md,.pdf,.docx"
-          disabled={uploading}
-        >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
-          <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
-          <p className="ant-upload-hint">
-            支持单个文件上传，仅支持 .txt, .md, .pdf, .docx 格式
-          </p>
-        </Dragger>
+      {/* 步骤指示器 */}
+      <Steps
+        current={currentStep}
+        items={[
+          { title: '上传文件', status: currentStep >= 0 ? 'process' : 'wait' },
+          { title: '配置策略', status: currentStep >= 1 ? 'process' : 'wait' },
+          { title: '预览分块', status: currentStep >= 2 ? 'process' : 'wait' },
+          { title: '完成', status: currentStep >= 3 ? 'finish' : 'wait' },
+        ]}
+        style={{ marginBottom: 24 }}
+      />
 
-        {uploadProgress > 0 && (
-          <Progress
-            percent={uploadProgress}
-            status={uploadProgress === 100 ? 'success' : 'active'}
-            style={{ marginTop: 16 }}
-          />
-        )}
-      </Card>
+      <Row gutter={24}>
+        {/* 左侧：上传和配置 */}
+        <Col xs={24} lg={12}>
+          {/* 上传区域 */}
+          <Card style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 12 }}>
+              <Text strong>1. 选择文件</Text>
+            </div>
+            <Dragger
+              name="file"
+              beforeUpload={beforeUpload}
+              fileList={fileList}
+              onRemove={() => {
+                setFileList([]);
+                setUploadResult(null);
+                setPreviewChunks([]);
+                setCurrentStep(0);
+              }}
+              accept=".txt,.md,.pdf,.docx"
+              disabled={uploading}
+            >
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined />
+              </p>
+              <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
+              <p className="ant-upload-hint">
+                支持单个文件上传，仅支持 .txt, .md, .pdf, .docx 格式，最大 50MB
+              </p>
+            </Dragger>
 
-      {/* 配置区域 */}
-      <Card title="分块配置" style={{ marginBottom: 24 }}>
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          {/* 分块策略 */}
-          <div>
-            <Text strong>分块策略</Text>
-            <Select
+            {uploadProgress > 0 && (
+              <Progress
+                percent={uploadProgress}
+                status={uploadProgress === 100 ? 'success' : 'active'}
+                style={{ marginTop: 16 }}
+              />
+            )}
+
+            {fileList.length > 0 && (
+              <Alert
+                message={`已选择: ${fileList[0].name} (${(fileList[0].size / 1024).toFixed(2)} KB)`}
+                type="info"
+                showIcon
+                style={{ marginTop: 12 }}
+              />
+            )}
+          </Card>
+
+          {/* 策略选择区域 */}
+          <Card style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 12 }}>
+              <Text strong>2. 选择分块策略</Text>
+            </div>
+            <ChunkStrategySelector
               value={strategy}
-              onChange={setStrategy}
-              style={{ width: '100%', marginTop: 8 }}
-              options={CHUNK_STRATEGIES}
+              onChange={handleStrategyChange}
+              disabled={uploading}
             />
-          </div>
+          </Card>
 
-          {/* 分块大小和重叠 */}
-          <Space style={{ width: '100%' }}>
-            <div style={{ flex: 1 }}>
-              <Text strong>分块大小（字符数）</Text>
-              <InputNumber
-                min={100}
-                max={2000}
-                value={chunkSize}
-                onChange={setChunkSize}
-                style={{ width: '100%', marginTop: 8 }}
-              />
+          {/* 策略配置区域 */}
+          <Card
+            title={
+              <Space>
+                <SettingOutlined />
+                <Text strong>3. 配置参数</Text>
+              </Space>
+            }
+            style={{ marginBottom: 24 }}
+          >
+            {renderStrategyConfig()}
+          </Card>
+
+          {/* 嵌入模型和提示词配置 */}
+          <Card style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 12 }}>
+              <Text strong>4. 其他配置</Text>
             </div>
-            <div style={{ flex: 1 }}>
-              <Text strong>分块重叠（字符数）</Text>
-              <InputNumber
-                min={0}
-                max={chunkSize}
-                value={chunkOverlap}
-                onChange={setChunkOverlap}
-                style={{ width: '100%', marginTop: 8 }}
-              />
-            </div>
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              {/* 嵌入模型 */}
+              <div>
+                <Text strong>嵌入模型</Text>
+                <Select
+                  value={embedModel}
+                  onChange={setEmbedModel}
+                  style={{ width: '100%', marginTop: 8 }}
+                  options={EMBED_MODELS}
+                  disabled={uploading}
+                />
+              </div>
+
+              {/* 自定义提示词 */}
+              <div>
+                <Text strong>自定义提示词（可选）</Text>
+                <TextArea
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  placeholder="为文档指定自定义的系统提示词..."
+                  rows={3}
+                  style={{ marginTop: 8 }}
+                  disabled={uploading}
+                />
+              </div>
+            </Space>
+          </Card>
+
+          {/* 操作按钮 */}
+          <Space style={{ marginBottom: 24 }} wrap>
+            <Button
+              type="default"
+              icon={<EyeOutlined />}
+              onClick={handlePreview}
+              loading={previewLoading}
+              disabled={fileList.length === 0 || uploading}
+              size="large"
+            >
+              预览分块
+            </Button>
+            <Button
+              type="primary"
+              icon={<CloudUploadOutlined />}
+              onClick={handleUpload}
+              loading={uploading}
+              disabled={fileList.length === 0}
+              size="large"
+            >
+              上传并处理
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={handleReset}
+              disabled={uploading}
+              size="large"
+            >
+              重置
+            </Button>
           </Space>
+        </Col>
 
-          {/* 嵌入模型 */}
-          <div>
-            <Text strong>嵌入模型</Text>
-            <Select
-              value={embedModel}
-              onChange={setEmbedModel}
-              style={{ width: '100%', marginTop: 8 }}
-              options={EMBED_MODELS}
-            />
-          </div>
+        {/* 右侧：预览和统计 */}
+        <Col xs={24} lg={12}>
+          {/* 统计信息 */}
+          <ChunkStatistics chunks={previewChunks} loading={previewLoading} />
 
-          {/* 自定义提示词 */}
-          <div>
-            <Text strong>自定义提示词（可选）</Text>
-            <TextArea
-              value={customPrompt}
-              onChange={(e) => setCustomPrompt(e.target.value)}
-              placeholder="为文档指定自定义的系统提示词..."
-              rows={3}
-              style={{ marginTop: 8 }}
-            />
-          </div>
-        </Space>
-      </Card>
-
-      {/* 操作按钮 */}
-      <Space style={{ marginBottom: 24 }}>
-        <Button
-          type="primary"
-          icon={<FileTextOutlined />}
-          onClick={handleUpload}
-          loading={uploading}
-          disabled={fileList.length === 0}
-          size="large"
-        >
-          上传并处理
-        </Button>
-        <Button onClick={handleReset} disabled={uploading}>
-          重置
-        </Button>
-      </Space>
+          {/* 分块预览 */}
+          <Card
+            title={
+              <Space>
+                <EyeOutlined />
+                <Text strong>分块预览</Text>
+              </Space>
+            }
+            extra={
+              previewChunks.length > 0 && (
+                <Tag color="blue">{previewChunks.length} 个分块</Tag>
+              )
+            }
+            style={{ marginBottom: 24 }}
+          >
+            <Spin spinning={previewLoading} tip="正在分析文档并生成分块预览...">
+              {previewError ? (
+                <Alert
+                  message="预览失败"
+                  description={previewError}
+                  type="error"
+                  showIcon
+                />
+              ) : (
+                <ChunkPreview
+                  chunks={previewChunks}
+                  loading={previewLoading}
+                  error={previewError}
+                />
+              )}
+            </Spin>
+          </Card>
+        </Col>
+      </Row>
 
       {/* 上传结果 */}
       {uploadResult && (
@@ -273,8 +599,10 @@ const DocumentUpload = () => {
               <p>文档ID: {uploadResult.documentId}</p>
               <p>生成知识块数: {uploadResult.chunkCount}</p>
               <p>状态: {uploadResult.status}</p>
+              <p>使用策略: {strategy}</p>
             </div>
           }
+          style={{ marginTop: 24 }}
         />
       )}
     </div>

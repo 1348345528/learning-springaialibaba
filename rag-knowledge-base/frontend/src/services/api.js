@@ -75,6 +75,30 @@ export const vectorApi = {
   reindex: (documentId) => {
     return apiClient.post(`/doc/${documentId}/reindex`);
   },
+  // 查询子块
+  getChildChunks: (parentId, page = 0, size = 20) => {
+    return apiClient.get(`/doc/chunks/${parentId}/children`, { params: { page, size } });
+  },
+  // 查询父块
+  getParentChunk: (childId) => {
+    return apiClient.get(`/doc/chunks/${childId}/parent`);
+  },
+};
+
+// ========== 分块预览与配置 API ==========
+export const chunkApi = {
+  // 分块预览
+  preview: (data) => {
+    return apiClient.post('/doc/preview', data, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  // 获取策略默认配置
+  getStrategyConfigs: () => {
+    return apiClient.get('/doc/config/defaults');
+  },
 };
 
 // ========== SSE 事件块解析工具 ==========
