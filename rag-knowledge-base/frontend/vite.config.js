@@ -10,12 +10,24 @@ export default defineConfig({
         target: 'http://localhost:8083',
         changeOrigin: true
       },
+      '/api/conversations': {
+        target: 'http://localhost:8083',
+        changeOrigin: true
+      },
       '/api/chunk': {
         target: 'http://localhost:8082',
         changeOrigin: true
       },
       '/api/doc': {
         target: 'http://localhost:8082',
+        changeOrigin: true
+      },
+      '/auth': {
+        target: 'http://localhost:8084',
+        changeOrigin: true
+      },
+      '/sys': {
+        target: 'http://localhost:8084',
         changeOrigin: true
       },
       '/api': {

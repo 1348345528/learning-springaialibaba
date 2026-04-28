@@ -17,6 +17,21 @@ node_modules/
 # Logs
 *.log
 logs/
+rag-knowledge-base/log/
+
+# Build artifacts
+rag-knowledge-base/frontend/dist/
+
+# Test artifacts
+test-results/
+rag-knowledge-base/frontend/test-results/
+rag-knowledge-base/frontend/playwright-report/
+
+# Editor temp files
+*~
+
+# Claude Code
+.claude/
 
 # OS
 .DS_Store

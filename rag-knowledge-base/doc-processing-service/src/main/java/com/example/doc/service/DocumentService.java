@@ -293,7 +293,7 @@ public class DocumentService {
      */
     public Page<ChunkDto> getChunks(int page, int size, String keyword) {
         PageRequest pageRequest = PageRequest.of(page, size);
-        Page<Chunk> chunkPage = keyword != null
+        Page<Chunk> chunkPage = keyword != null && !keyword.trim().isEmpty()
                 ? chunkRepository.findByDocumentNameContaining(keyword, pageRequest)
                 : chunkRepository.findAll(pageRequest);
         return chunkPage.map(this::toDto);

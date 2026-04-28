@@ -1,6 +1,7 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Typography, Divider, message } from 'antd';
-import { chatApi } from '../services/api';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Typography, Divider, message, Button } from 'antd';
+import { chatApi, conversationApi } from '../services/api';
+import ConversationSidebar from '../components/chat/ConversationSidebar';
 import ConversationList from '../components/chat/ConversationList';
 import InputArea from '../components/chat/InputArea';
 
@@ -17,12 +18,55 @@ const INVALID_CHARS = /[<>{}]/;
 const MAX_INPUT_LENGTH = 500;
 
 const ChatQA = () => {
+  const [conversations, setConversations] = useState([]);
+  const [activeConversationId, setActiveConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingId, setStreamingId] = useState(null);
   const [error, setError] = useState(null);
 
+  const [sidebarVisible, setSidebarVisible] = useState(true);
   const streamRequestRef = useRef(null);
+
+  // 加载会话列表
+  useEffect(() => {
+    loadConversations();
+  }, []);
+
+  const loadConversations = async () => {
+    try {
+      const data = await conversationApi.list();
+      setConversations(data || []);
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    }
+  };
+
+  // 切换会话
+  const handleSelectConversation = useCallback(async (conversationId) => {
+    setActiveConversationId(conversationId);
+    setMessages([]);
+    setError(null);
+    setStreamingId(null);
+
+    if (!conversationId) return;
+
+    // 从后端加载会话历史
+    try {
+      const response = await conversationApi.getMessages(conversationId);
+      const data = response.data || [];
+      const mapped = data.map((msg, index) => ({
+        id: `history-${index}`,
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp || Date.now(),
+        status: 'success',
+      }));
+      setMessages(mapped);
+    } catch (error) {
+      console.error('Failed to load conversation messages:', error);
+    }
+  }, []);
 
   // 添加消息
   const addMessage = useCallback((role, content, status = 'success') => {
@@ -31,7 +75,7 @@ const ChatQA = () => {
       role,
       content,
       timestamp: Date.now(),
-      status,
+      status
     };
     setMessages((prev) => [...prev, newMessage]);
     return newMessage.id;
@@ -53,6 +97,22 @@ const ChatQA = () => {
       return;
     }
 
+    // 确保有活动会话
+    let currentConversationId = activeConversationId;
+    if (!currentConversationId) {
+      // 创建新会话
+      try {
+        const newConv = await conversationApi.create('新会话');
+        currentConversationId = newConv.conversationId;
+        setActiveConversationId(currentConversationId);
+        setConversations([newConv, ...conversations]);
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        message.error('创建会话失败');
+        return;
+      }
+    }
+
     const userMessage = text.trim();
     setError(null);
     setIsStreaming(true);
@@ -64,12 +124,18 @@ const ChatQA = () => {
     const assistantMsgId = addMessage(ROLE.ASSISTANT, '', 'loading');
     setStreamingId(assistantMsgId);
 
+    // 緻加conversationId到请求
+    const requestWithConversationId = {
+      message: userMessage,
+      conversationId: currentConversationId,
+    };
+
     // 累积内容
     let fullContent = '';
 
     try {
       const { promise, abort } = chatApi.streamChat(
-        { message: userMessage },
+        requestWithConversationId,
         (data) => {
           if (data.type === 'done') {
             // 流结束
@@ -81,6 +147,8 @@ const ChatQA = () => {
               )
             );
             setStreamingId(null);
+            // 刷新会话列表（标题和时间戳已更新）
+            loadConversations();
           } else if (data.type === 'chunk') {
             // 纯文本块
             fullContent += data.content;
@@ -155,6 +223,7 @@ const ChatQA = () => {
     setMessages([]);
     setError(null);
     setStreamingId(null);
+    setActiveConversationId(null);
   };
 
   // 重试失败的消息
@@ -169,60 +238,85 @@ const ChatQA = () => {
     <div
       style={{
         display: 'flex',
-        flexDirection: 'column',
         height: 'calc(100vh - 64px)',
         background: '#fff',
       }}
     >
-      {/* 页面标题 */}
-      <div style={{ padding: '24px 24px 0' }}>
-        <Title level={3} style={{ margin: 0 }}>智能问答</Title>
-        <Text type="secondary">基于知识库的智能问答助手</Text>
-        <Divider style={{ marginTop: 16, marginBottom: 0 }} />
-      </div>
-
-      {/* 错误提示 */}
-      {error && !isStreaming && (
-        <div
-          style={{
-            margin: '0 24px 16px',
-            padding: '8px 12px',
-            background: '#fff2f0',
-            border: '1px solid #ff4d4f',
-            borderRadius: 4,
-            color: '#ff4d4f',
-          }}
-        >
-          抱歉，网络连接失败，请重试
-        </div>
+      {/* 会话侧边栏 */}
+      {sidebarVisible && (
+        <ConversationSidebar
+          activeConversationId={activeConversationId}
+          onSelectConversation={handleSelectConversation}
+        />
       )}
 
-      {/* 对话列表 */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <ConversationList
-          messages={messages}
-          loading={false}
-          streamingId={streamingId}
-          onRetry={handleRetry}
+      {/* 主聊天区域 */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {/* 页面标题 */}
+        <div style={{ padding: '24px 24px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Title level={3} style={{ margin: 0 }}>智能问答</Title>
+            <Text type="secondary">基于知识库的智能问答助手</Text>
+            <Button
+              type="text"
+              onClick={() => setSidebarVisible(!sidebarVisible)}
+            >
+              {sidebarVisible ? '隐藏会话' : '显示会话'}
+            </Button>
+          </div>
+          <Divider style={{ marginTop: 16, marginBottom: 0 }} />
+        </div>
+
+        {/* 错误提示 */}
+        {error && !isStreaming && (
+          <div
+            style={{
+              margin: '0 24px 16px',
+              padding: '8px 12px',
+              background: '#fff2f0',
+              border: '1px solid #ff4d4f',
+              borderRadius: 4,
+              color: '#ff4d4f',
+            }}
+          >
+            抱歉，网络连接失败，请重试
+          </div>
+        )}
+
+        {/* 对话列表 */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <ConversationList
+            messages={messages}
+            loading={false}
+            streamingId={streamingId}
+            onRetry={handleRetry}
+          />
+        </div>
+
+        {/* 输入区域 */}
+        <InputArea
+          onSend={handleSend}
+          onReset={isStreaming ? handleStop : handleReset}
+          disabled={isStreaming}
+          maxLength={MAX_INPUT_LENGTH}
+          messageCount={messages.length}
         />
+
+        {/* CSS 动画 */}
+        <style>{`
+          @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+          }
+        `}</style>
       </div>
-
-      {/* 输入区域 */}
-      <InputArea
-        onSend={handleSend}
-        onReset={isStreaming ? handleStop : handleReset}
-        disabled={isStreaming}
-        maxLength={MAX_INPUT_LENGTH}
-        messageCount={messages.length}
-      />
-
-      {/* CSS 动画 */}
-      <style>{`
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 };

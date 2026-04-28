@@ -12,16 +12,55 @@ server:
       force: true
 spring:
   ai:
-    minimax:
-      api-key: sk-cp-NtJsjzVVVBlIGqKmL2mwoeqraEWmJiCOvw3i7v80cJ479hYg6rXhBvSqmi5p1lmKkL-XcHp15sSVugNXhmFVjH_Q4BjUQ-cV5n-Nkh6aGgC0n452DM3q5yg
-      base-url: https://api.minimaxi.com
+    deepseek:
+      api-key: sk-658c897958574db8b001e7120c9e475b
+      base-url: https://api.deepseek.com
       chat:
         options:
-          model: MiniMax-M2.5-highspeed
+          model: deepseek-chat
+  # Redis Configuration (L1 Cache)
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+  # MySQL Configuration (L2 Persistence)
+  datasource:
+    url: jdbc:mysql://localhost:3306/rag_knowledgebase?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
   http:
     encoding:
       charset: UTF-8
       enabled: true
+
+jwt:
+  secret: mySecretKeyForJWTTokenGenerationAndValidation2026!Secure
+
 rag:
   service:
     base-url: http://localhost:8081
+
+# ChatMemory Configuration
+chat:
+  memory:
+    redis:
+      key-prefix: "chat:memory:"
+      ttl-hours: 24
+    sync:
+      max-retries: 3
+      retry-delay-ms: 1000

@@ -1,11 +1,11 @@
 // @ts-check
-const { defineConfig, devices } = require('@playwright/test');
+import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Playwright E2E Test Configuration for RAG Document Chunking System
  * @see https://playwright.dev/docs/test-configuration
  */
-module.exports = defineConfig({
+export default defineConfig({
   // Test directory
   testDir: './tests/e2e',
 
@@ -31,7 +31,7 @@ module.exports = defineConfig({
   // Shared settings for all projects
   use: {
     // Base URL for navigation
-    baseURL: 'http://localhost:5173',
+    baseURL: 'http://localhost:3001',
 
     // Collect trace when retrying the failed test
     trace: 'on-first-retry',
@@ -84,8 +84,8 @@ module.exports = defineConfig({
   // Run local dev server before starting tests
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
+    url: 'http://localhost:3001',
+    reuseExistingServer: true, // Always reuse existing server
     timeout: 120000,
     stdout: 'pipe',
     stderr: 'pipe',

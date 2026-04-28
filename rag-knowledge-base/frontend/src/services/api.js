@@ -1,265 +1,148 @@
 import axios from 'axios';
 
-const API_BASE = '/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
-// 创建 axios 实例
-const apiClient = axios.create({
-  baseURL: API_BASE,
-  timeout: 60000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000,
 });
 
-// 请求拦截器
-apiClient.interceptors.request.use(
+// 请求拦截器：添加 token
+api.interceptors.request.use(
   (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
+  (error) => Promise.reject(error)
+);
+
+// 响应拦截器：处理 401
+api.interceptors.response.use(
+  (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
     return Promise.reject(error);
   }
 );
 
-// 响应拦截器
-apiClient.interceptors.response.use(
-  (response) => {
-    return response.data;
-  },
-  (error) => {
-    const message = error.response?.data?.message || error.message || '请求失败';
-    return Promise.reject(new Error(message));
-  }
-);
+export default api;
 
-// ========== 文档 API ==========
-export const documentApi = {
-  upload: (formData) => {
-    return apiClient.post('/doc/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-  },
-  list: (params) => {
-    return apiClient.get('/doc/documents');
-  },
-  getById: (id) => {
-    return apiClient.get(`/doc/${id}`);
-  },
-  delete: (id) => {
-    return apiClient.delete(`/doc/${id}`);
-  },
-  getContent: (id) => {
-    return apiClient.get(`/doc/${id}/content`);
-  },
+export const authService = {
+  login: (username, password) => api.post('/auth/login', { username, password }),
+  getUserInfo: () => api.get('/auth/user/info'),
+  getMenuTree: () => api.get('/auth/menu/tree'),
 };
 
-// ========== 向量/知识块 API ==========
-export const vectorApi = {
-  listChunks: (params) => {
-    return apiClient.get('/doc/chunks', { params });
-  },
-  getChunkById: (id) => {
-    return apiClient.get(`/doc/chunks/${id}`);
-  },
-  updateChunk: (id, data) => {
-    return apiClient.put(`/doc/chunks/${id}`, data);
-  },
-  deleteChunk: (id) => {
-    return apiClient.delete(`/doc/chunks/${id}`);
-  },
-  batchDeleteChunks: (ids) => {
-    return apiClient.delete('/doc/chunks/batch', { data: ids });
-  },
-  reindex: (documentId) => {
-    return apiClient.post(`/doc/${documentId}/reindex`);
-  },
-  // 查询子块
-  getChildChunks: (parentId, page = 0, size = 20) => {
-    return apiClient.get(`/doc/chunks/${parentId}/children`, { params: { page, size } });
-  },
-  // 查询父块
-  getParentChunk: (childId) => {
-    return apiClient.get(`/doc/chunks/${childId}/parent`);
-  },
+export const userService = {
+  list: () => api.get('/sys/user'),
+  create: (data) => api.post('/sys/user', data),
+  update: (id, data) => api.put(`/sys/user/${id}`, data),
+  delete: (id) => api.delete(`/sys/user/${id}`),
+  assignRoles: (userId, roleIds) => api.post(`/sys/user/${userId}/roles`, { roleIds }),
 };
 
-// ========== 分块预览与配置 API ==========
-export const chunkApi = {
-  // 分块预览（发送 JSON 格式）
-  preview: (data) => {
-    return apiClient.post('/chunk/preview', data);
-  },
-  // 获取策略默认配置
-  getStrategyConfigs: () => {
-    return apiClient.get('/chunk/preview/strategies');
-  },
+export const roleService = {
+  list: () => api.get('/sys/role'),
+  create: (data) => api.post('/sys/role', data),
+  update: (id, data) => api.put(`/sys/role/${id}`, data),
+  delete: (id) => api.delete(`/sys/role/${id}`),
+  assignMenus: (roleId, menuIds) => api.post(`/sys/role/${roleId}/menus`, { menuIds }),
 };
 
-// ========== SSE 事件块解析工具 ==========
-// 解析 SSE 事件块
-// 标准 SSE 格式：每个 data: 行是完整内容片段，用空行分隔事件
-// 所有 data: 内容被拼接在一起，只有 [DONE] 单独返回
-export function extractSseEventBlocks(text, remainder = '') {
-  // 将上次的 remainder 拼接到文本前面
-  const content = remainder + text;
+export const menuService = {
+  list: () => api.get('/sys/menu'),
+  create: (data) => api.post('/sys/menu', data),
+  update: (id, data) => api.put(`/sys/menu/${id}`, data),
+  delete: (id) => api.delete(`/sys/menu/${id}`),
+};
 
-  // 分割行
-  const lines = content.split('\n');
+// 会话管理 API
+export const conversationApi = {
+  list: () => api.get('/api/conversations'),
+  create: (title) => api.post('/api/conversations', { title }),
+  delete: (conversationId) => api.delete(`/api/conversations/${conversationId}`),
+  updateTitle: (conversationId, title) => api.put(`/api/conversations/${conversationId}/title`, title, {
+    headers: { 'Content-Type': 'text/plain' },
+  }),
+  getMessages: (conversationId) => api.get(`/api/conversations/${conversationId}/messages`),
+};
 
-  let fullContent = '';  // 累积所有 data: 内容
-  let hasDone = false;   // 是否收到 [DONE]
-
-  for (const line of lines) {
-    // 跳过空行
-    if (!line.trim()) {
-      continue;
-    }
-
-    // 检查是否是 data: 行
-    if (line.startsWith('data:')) {
-      const dataContent = line.slice(5).replace(/^\s+/, ''); // 去掉 "data:" 和前导空格
-
-      if (dataContent === '[DONE]') {
-        hasDone = true;
-      } else if (dataContent) {
-        // 拼接内容，用换行分隔
-        if (fullContent) {
-          fullContent += '\n' + dataContent;
-        } else {
-          fullContent = dataContent;
-        }
-      }
-    }
-    // 非 data: 行，跳过
-  }
-
-  // 计算未处理的 remainder
-  let newRemainder = '';
-  const lastLine = lines[lines.length - 1];
-
-  if (lastLine && lastLine.trim() && lastLine.startsWith('data:')) {
-    const dataContent = lastLine.slice(5);
-    // 如果最后一行是 data: 但没有内容或不完整，保留
-    if (dataContent.trim() === '' || (!hasDone && !lastLine.includes('[DONE]'))) {
-      newRemainder = lastLine;
-    }
-  }
-
-  // 如果收到 [DONE]，返回 [DONE] 作为单独块
-  if (hasDone) {
-    // 如果有累积内容，先返回内容块，再返回 [DONE] 块
-    if (fullContent) {
-      return { blocks: [fullContent, '[DONE]'], remainder: '' };
-    }
-    return { blocks: ['[DONE]'], remainder: '' };
-  }
-
-  // 返回累积的内容
-  if (fullContent) {
-    return { blocks: [fullContent], remainder: newRemainder };
-  }
-  return { blocks: [], remainder: newRemainder };
-}
-
-// ========== 聊天 API ==========
+// 聊天 API（SSE 流式）
 export const chatApi = {
-  chat: (data) => {
-    return apiClient.post('/chat', data);
-  },
-
-  streamChat: (data, onMessage, onError) => {
+  streamChat: (request, onData, onError) => {
     const xhr = new XMLHttpRequest();
-    let isAborted = false;
+    xhr.open('POST', '/api/chat/stream');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    const token = localStorage.getItem('token');
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
 
-    const promise = new Promise((resolve, reject) => {
-      xhr.open('POST', `${API_BASE}/chat/stream`);
-      xhr.setRequestHeader('Content-Type', 'application/json');
+    let lastIndex = 0;
+    xhr.onprogress = () => {
+      const newData = xhr.responseText.substring(lastIndex);
+      lastIndex = xhr.responseText.length;
 
-      let lastProcessedLength = 0;
-      let remainder = '';
-
-      xhr.onprogress = () => {
-        if (isAborted) return;
-
-        const text = xhr.responseText;
-        const newText = text.slice(lastProcessedLength);
-        lastProcessedLength = text.length;
-
-        const { blocks, remainder: newRemainder } = extractSseEventBlocks(newText, remainder);
-        remainder = newRemainder;
-
-        for (const content of blocks) {
-          if (content === '[DONE]') {
-            onMessage({ type: 'done' });
-            resolve();
-            return;
-          }
-          // 尝试解析 JSON，如果失败则当作纯文本
-          try {
-            const parsed = JSON.parse(content);
-            onMessage(parsed);
-          } catch (e) {
-            onMessage({ type: 'chunk', content: content });
-          }
-        }
-      };
-
-      xhr.onload = () => {
-        if (isAborted) return;
-
-        if (xhr.status >= 200 && xhr.status < 300) {
-          // 处理最后可能剩余的内容
-          const remainingText = xhr.responseText.slice(lastProcessedLength);
-          const { blocks } = extractSseEventBlocks(remainingText, remainder);
-
-          for (const content of blocks) {
-            if (content === '[DONE]') continue;
+      const lines = newData.split('\n').filter(Boolean);
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          const data = line.substring(5).trim();
+          if (data === '[DONE]') {
+            onData({ type: 'done' });
+          } else {
             try {
-              const parsed = JSON.parse(content);
-              onMessage(parsed);
-            } catch (e) {
-              onMessage({ type: 'chunk', content: content });
+              const parsed = JSON.parse(data);
+              onData({ type: 'chunk', content: parsed.content || parsed.response || '' });
+            } catch {
+              onData({ type: 'chunk', content: data });
             }
           }
-          onMessage({ type: 'done' });
-          resolve();
-        } else {
-          reject(new Error(`HTTP error! status: ${xhr.status}`));
         }
-      };
-
-      xhr.onerror = () => {
-        if (isAborted) return;
-        reject(new Error('网络请求失败'));
-      };
-
-      xhr.onabort = () => {
-        isAborted = true;
-        reject(new Error('aborted'));
-      };
-
-      xhr.send(JSON.stringify(data));
-    });
-
-    // 返回 Promise 和 abort 方法
-    return {
-      promise,
-      abort: () => {
-        isAborted = true;
-        xhr.abort();
-      },
+      }
     };
-  },
 
-  getHistory: (params) => {
-    return apiClient.get('/chat/history', { params });
-  },
+    xhr.onerror = () => onError('网络连接失败');
+    xhr.onabort = () => onError('aborted');
 
-  clearHistory: () => {
-    return apiClient.delete('/chat/history');
+    xhr.send(JSON.stringify(request));
+
+    return {
+      promise: new Promise((resolve, reject) => {
+        xhr.onloadend = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(xhr.responseText || '请求失败'));
+          }
+        };
+      }),
+      abort: () => xhr.abort(),
+    };
   },
 };
 
-export default apiClient;
+// 文档管理 API
+export const documentApi = {
+  list: () => api.get('/api/doc/documents'),
+};
+
+// 分块预览 API
+export const chunkApi = {
+  preview: (data) => api.post('/api/chunk/preview', data),
+};
+
+// 向量知识块管理 API
+export const vectorApi = {
+  listChunks: (params) => api.get('/api/doc/chunks', { params }),
+  updateChunk: (id, data) => api.put(`/api/doc/chunks/${id}`, data),
+  deleteChunk: (id) => api.delete(`/api/doc/chunks/${id}`),
+  batchDeleteChunks: (ids) => api.post('/api/doc/chunks/batch-delete', { ids }),
+  reindex: (documentId) => api.post('/api/doc/chunks/reindex', { documentId }),
+};

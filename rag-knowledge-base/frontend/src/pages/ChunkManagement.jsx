@@ -53,14 +53,14 @@ const ChunkManagement = () => {
       const params = {
         page: page - 1,
         size: pageSize,
-        ...filters,
       };
+      if (filters.keyword) params.keyword = filters.keyword;
       const response = await vectorApi.listChunks(params);
-      setChunks(response.content || []);
+      setChunks(response.data?.content || []);
       setPagination({
         current: page,
         pageSize: pageSize,
-        total: response.totalElements || 0,
+        total: response.data?.totalElements || 0,
       });
     } catch (error) {
       message.error(error.message || '加载失败');
@@ -73,8 +73,7 @@ const ChunkManagement = () => {
   const loadDocuments = async () => {
     try {
       const response = await documentApi.list();
-      // /doc/documents 返回字符串数组，直接使用
-      setDocuments(Array.isArray(response) ? response : []);
+      setDocuments(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('加载文档列表失败', error);
     }
@@ -196,9 +195,9 @@ const ChunkManagement = () => {
       render: (text) => text?.substring(0, 100) + '...',
     },
     {
-      title: '文档ID',
-      dataIndex: 'documentId',
-      key: 'documentId',
+      title: '文档名称',
+      dataIndex: 'documentName',
+      key: 'documentName',
       width: 100,
       ellipsis: true,
     },
@@ -209,11 +208,11 @@ const ChunkManagement = () => {
       width: 100,
     },
     {
-      title: '向量维度',
-      dataIndex: 'vectorDimension',
-      key: 'vectorDimension',
+      title: '分块策略',
+      dataIndex: 'strategy',
+      key: 'strategy',
       width: 100,
-      render: (dim) => <Tag color="blue">{dim}</Tag>,
+      render: (strategy) => <Tag color="blue">{strategy}</Tag>,
     },
     {
       title: '创建时间',
@@ -394,9 +393,9 @@ const ChunkManagement = () => {
 
           {detailModal.chunk && (
             <Space direction="vertical" style={{ width: '100%' }}>
-              <Text type="secondary">文档ID: {detailModal.chunk.documentId}</Text>
+              <Text type="secondary">文档名称: {detailModal.chunk.documentName}</Text>
               <Text type="secondary">分块序号: {detailModal.chunk.chunkIndex}</Text>
-              <Text type="secondary">向量维度: {detailModal.chunk.vectorDimension}</Text>
+              <Text type="secondary">分块策略: {detailModal.chunk.strategy}</Text>
               <Text type="secondary">创建时间: {new Date(detailModal.chunk.createdAt).toLocaleString()}</Text>
             </Space>
           )}
