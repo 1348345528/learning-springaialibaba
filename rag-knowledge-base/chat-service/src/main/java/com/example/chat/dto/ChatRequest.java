@@ -8,6 +8,7 @@ public class ChatRequest {
     private String message;
     private int topK = 5;
     private boolean stream = true;
+    private String[] toolNames;
 
     // Default constructor
     public ChatRequest() {}
@@ -43,5 +44,13 @@ public class ChatRequest {
 
     public void setStream(boolean stream) {
         this.stream = stream;
+    }
+
+    public String[] getToolNames() {
+        return toolNames;
+    }
+
+    public void setToolNames(String[] toolNames) {
+        this.toolNames = toolNames;
     }
 }

@@ -7,6 +7,7 @@ import MainLayout from './components/MainLayout';
 import DocumentUpload from './pages/DocumentUpload';
 import ChunkManagement from './pages/ChunkManagement';
 import ChatQA from './pages/ChatQA';
+import McpManagement from './pages/McpManagement';
 import UserManagement from './pages/UserManagement';
 import RoleManagement from './pages/RoleManagement';
 import MenuManagement from './pages/MenuManagement';
@@ -35,6 +36,7 @@ const App = () => {
           <Route index element={<Navigate to="/rag/document" replace />} />
           <Route path="rag/document" element={<DocumentUpload />} />
           <Route path="rag/chunk" element={<ChunkManagement />} />
+          <Route path="mcp" element={<McpManagement />} />
           <Route path="chat" element={<ChatQA />} />
           <Route path="sys/user" element={<UserManagement />} />
           <Route path="sys/role" element={<RoleManagement />} />

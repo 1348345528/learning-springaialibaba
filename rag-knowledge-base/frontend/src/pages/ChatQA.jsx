@@ -4,6 +4,7 @@ import { chatApi, conversationApi } from '../services/api';
 import ConversationSidebar from '../components/chat/ConversationSidebar';
 import ConversationList from '../components/chat/ConversationList';
 import InputArea from '../components/chat/InputArea';
+import McpToolSelector from '../components/mcp/McpToolSelector';
 
 const { Title, Text } = Typography;
 
@@ -26,6 +27,7 @@ const ChatQA = () => {
   const [error, setError] = useState(null);
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [selectedTools, setSelectedTools] = useState([]);
   const streamRequestRef = useRef(null);
 
   // 加载会话列表
@@ -128,6 +130,7 @@ const ChatQA = () => {
     const requestWithConversationId = {
       message: userMessage,
       conversationId: currentConversationId,
+      toolNames: selectedTools.length > 0 ? selectedTools : undefined,
     };
 
     // 累积内容
@@ -299,6 +302,12 @@ const ChatQA = () => {
             onRetry={handleRetry}
           />
         </div>
+
+        {/* MCP 工具选择器 */}
+        <McpToolSelector
+          value={selectedTools}
+          onChange={setSelectedTools}
+        />
 
         {/* 输入区域 */}
         <InputArea

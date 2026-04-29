@@ -89,13 +89,14 @@ public class DataInitializer implements CommandLineRunner {
         SysMenu docMenu = createMenu(ragDir.getId(), "文档管理", "/rag/document", "DocumentUpload", null, 2, 2, null);
         SysMenu chunkMenu = createMenu(ragDir.getId(), "知识块管理", "/rag/chunk", "ChunkManagement", null, 2, 2, null);
         SysMenu chatMenu = createMenu(null, "智能问答", "/chat", "ChatQA", "RobotOutlined", 1, 2, null);
+        SysMenu mcpMenu = createMenu(null, "MCP 管理", "/mcp", "McpManagement", "ApiOutlined", 1, 2, null);
 
         SysMenu sysDir = createMenu(null, "系统管理", null, null, "SettingOutlined", 1, 1, "ROLE_ADMIN");
         SysMenu userMgmt = createMenu(sysDir.getId(), "用户管理", "/sys/user", "UserManagement", null, 2, 2, "ROLE_ADMIN");
         SysMenu roleMgmt = createMenu(sysDir.getId(), "角色管理", "/sys/role", "RoleManagement", null, 2, 2, "ROLE_ADMIN");
         SysMenu menuMgmt = createMenu(sysDir.getId(), "菜单管理", "/sys/menu", "MenuManagement", null, 2, 2, "ROLE_ADMIN");
 
-        List<SysMenu> allMenus = List.of(ragDir, docMenu, chunkMenu, chatMenu, sysDir, userMgmt, roleMgmt, menuMgmt);
+        List<SysMenu> allMenus = List.of(ragDir, docMenu, chunkMenu, chatMenu, mcpMenu, sysDir, userMgmt, roleMgmt, menuMgmt);
 
         // Assign all menus to admin role
         for (SysMenu menu : allMenus) {
@@ -105,8 +106,8 @@ public class DataInitializer implements CommandLineRunner {
             roleMenuRepository.save(rm);
         }
 
-        // Assign only RAG menus + chat to user role
-        for (SysMenu menu : List.of(ragDir, docMenu, chunkMenu, chatMenu)) {
+        // Assign only RAG menus + chat + mcp to user role
+        for (SysMenu menu : List.of(ragDir, docMenu, chunkMenu, chatMenu, mcpMenu)) {
             SysRoleMenu rm = new SysRoleMenu();
             rm.setRoleId(userRole.getId());
             rm.setMenuId(menu.getId());

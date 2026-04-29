@@ -96,13 +96,17 @@ export const chatApi = {
           const data = line.substring(5).trim();
           if (data === '[DONE]') {
             onData({ type: 'done' });
-          } else {
+          } else if (data.startsWith('{')) {
+            // JSON 对象：尝试解析提取 content/response
             try {
               const parsed = JSON.parse(data);
-              onData({ type: 'chunk', content: parsed.content || parsed.response || '' });
+              onData({ type: 'chunk', content: parsed.content || parsed.response || data });
             } catch {
               onData({ type: 'chunk', content: data });
             }
+          } else {
+            // 纯文本（含纯数字如 "18"），直接使用
+            onData({ type: 'chunk', content: data });
           }
         }
       }
@@ -145,4 +149,13 @@ export const vectorApi = {
   deleteChunk: (id) => api.delete(`/api/doc/chunks/${id}`),
   batchDeleteChunks: (ids) => api.post('/api/doc/chunks/batch-delete', { ids }),
   reindex: (documentId) => api.post('/api/doc/chunks/reindex', { documentId }),
+};
+
+// MCP Server 管理 API
+export const mcpApi = {
+  listServers: () => api.get('/api/mcp/servers'),
+  register: (data) => api.post('/api/mcp/servers', data),
+  unregister: (id) => api.delete(`/api/mcp/servers/${id}`),
+  reconnect: (id, data) => api.post(`/api/mcp/servers/${id}/reconnect`, data),
+  listTools: () => api.get('/api/mcp/tools'),
 };

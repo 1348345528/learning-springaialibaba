@@ -6,7 +6,7 @@ import com.example.chat.repository.MysqlChatMemoryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -21,7 +21,8 @@ import java.util.Map;
 @Slf4j
 public class RagChatService {
 
-    private final ChatModel chatModel;
+    private final ChatClient chatClient;
+    private final McpToolRegistryService mcpToolRegistry;
     private final org.springframework.web.reactive.function.client.WebClient webClient;
     private final MultiLevelChatMemory chatMemory;
     private final HistorySummaryService historySummaryService;
@@ -44,14 +45,16 @@ public class RagChatService {
         // 4. 构建系统提示词（含历史摘要和 RAG 上下文）
         String systemPrompt = buildSystemPrompt(context, historySummary);
 
-        // 5. 累积完整回复内容，用于流结束后保存
+        // 5. 从内存 Map 查询用户选中的 MCP 工具
+        ToolCallback[] selectedTools = mcpToolRegistry.lookup(request.getToolNames());
+
+        // 6. 使用单例 ChatClient + prompt 级 toolCallbacks 注入，无需重建 ChatClient
         StringBuilder fullContent = new StringBuilder();
 
-        Flux<String> tokenFlux = ChatClient.builder(chatModel)
-                .build()
-                .prompt()
+        Flux<String> tokenFlux = chatClient.prompt()
                 .system(systemPrompt)
                 .user(request.getMessage())
+                .toolCallbacks(selectedTools)
                 .stream()
                 .content()
                 .doOnNext(token -> fullContent.append(token));
