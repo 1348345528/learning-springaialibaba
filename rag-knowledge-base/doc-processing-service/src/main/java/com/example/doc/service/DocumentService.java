@@ -1,6 +1,5 @@
 package com.example.doc.service;
 
-import com.alibaba.cloud.ai.transformer.splitter.SentenceSplitter;
 import com.alibaba.fastjson.JSON;
 import com.example.doc.chunker.TextChunk;
 import com.example.doc.chunker.config.HierarchicalChunkConfig;
@@ -12,8 +11,8 @@ import com.example.doc.chunker.impl.TrueSemanticChunker;
 import com.example.doc.dto.ChunkDto;
 import com.example.doc.dto.ChunkRequest;
 import com.example.doc.entity.Chunk;
-import com.example.doc.parser.SpringAiDocumentReader;
-import com.example.doc.parser.impl.ExcelParser;
+import com.alibaba.cloud.ai.parser.tika.TikaDocumentParser;
+import com.alibaba.cloud.ai.reader.poi.PoiDocumentReader;
 import com.example.doc.repository.ChunkRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -47,8 +47,6 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DocumentService {
 
-    private final SpringAiDocumentReader documentReader;
-    private final ExcelParser excelParser;
     private final ChunkRepository chunkRepository;
     private final RecursiveChunker recursiveChunker;
     private final TrueSemanticChunker trueSemanticChunker;
@@ -72,24 +70,42 @@ public class DocumentService {
         String fileName = file.getOriginalFilename();
         String extension = getFileExtension(fileName);
         String content;
+
+        List<Document> documents;
         try {
-            if (excelParser.supports(extension)) {
-                // Excel 文件使用自定义解析器（保留 Sheet 结构）
-                content = excelParser.parse(file.getBytes());
+            if (isOfficeFile(extension)) {
+                // Office 文件使用 POI DocumentReader
+                PoiDocumentReader reader = new PoiDocumentReader(file.getResource());
+                documents = reader.read();
             } else {
-                // 其他文件使用 Spring AI 标准解析器
-                List<Document> documents = documentReader.read(file.getBytes(), extension);
-                content = documentReader.extractText(documents);
+                // 其他文件使用 Tika DocumentParser
+                TikaDocumentParser parser = new TikaDocumentParser();
+                documents = parser.parse(file.getInputStream());
             }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to parse document", e);
+            throw new RuntimeException("Failed to read document", e);
         }
+        content = documents.stream()
+                .map(Document::getText)
+                .filter(t -> t != null && !Objects.isNull(t))
+                .collect(Collectors.joining("\n"));
 
         if (content.isEmpty()) {
             throw new RuntimeException("Document content is empty");
         }
 
         return processContent(content, fileName, request);
+    }
+
+    private boolean isOfficeFile(String extension) {
+        return Set.of("docx", "doc", "xlsx", "xls", "pptx", "ppt").contains(extension.toLowerCase());
+    }
+
+    private String getFileExtension(String fileName) {
+        if (fileName == null || !fileName.contains(".")) {
+            return "";
+        }
+        return fileName.substring(fileName.lastIndexOf(".") + 1);
     }
 
     /**
@@ -438,16 +454,6 @@ public class DocumentService {
         }
 
         return config;
-    }
-
-    /**
-     * 获取文件扩展名
-     */
-    private String getFileExtension(String fileName) {
-        if (fileName == null || !fileName.contains(".")) {
-            throw new IllegalArgumentException("Invalid file name");
-        }
-        return fileName.substring(fileName.lastIndexOf(".") + 1);
     }
 
     /**

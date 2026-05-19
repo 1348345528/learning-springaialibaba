@@ -12,12 +12,12 @@ server:
       force: true
 spring:
   ai:
-    deepseek:
-      api-key: sk-658c897958574db8b001e7120c9e475b
-      base-url: https://api.deepseek.com
+    dashscope:
+      api-key: sk-9259cd2c369d4dfaa44ce71fd8b9f67e
       chat:
         options:
-          model: deepseek-chat
+          model: qwen-plus
+          temperature: 0.7
   # Redis Configuration (L1 Cache)
   data:
     redis:

@@ -1,6 +1,12 @@
 server:
   port: 8081
 spring:
+  ai:
+    dashscope:
+      api-key: sk-9259cd2c369d4dfaa44ce71fd8b9f67e
+      embedding:
+        options:
+          model: text-embedding-v4
   datasource:
     url: jdbc:mysql://localhost:3306/rag_knowledgebase?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
@@ -12,11 +18,6 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
-
-dashscope:
-  api-key: sk-9259cd2c369d4dfaa44ce71fd8b9f67e
-  embedding:
-    model: text-embedding-v4
 
 milvus:
   host: localhost
