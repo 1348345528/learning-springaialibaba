@@ -1,8 +1,7 @@
 package com.example.doc.service;
 
+import com.alibaba.cloud.ai.transformer.splitter.SentenceSplitter;
 import com.alibaba.fastjson.JSON;
-import com.example.doc.chunker.ChunkConfig;
-import com.example.doc.chunker.ChunkStrategy;
 import com.example.doc.chunker.TextChunk;
 import com.example.doc.chunker.config.HierarchicalChunkConfig;
 import com.example.doc.chunker.config.RecursiveChunkConfig;
@@ -13,11 +12,12 @@ import com.example.doc.chunker.impl.TrueSemanticChunker;
 import com.example.doc.dto.ChunkDto;
 import com.example.doc.dto.ChunkRequest;
 import com.example.doc.entity.Chunk;
-import com.example.doc.parser.DocumentParser;
-import com.example.doc.parser.DocumentParserFactory;
+import com.example.doc.parser.SpringAiDocumentReader;
+import com.example.doc.parser.impl.ExcelParser;
 import com.example.doc.repository.ChunkRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.document.Document;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -47,8 +47,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DocumentService {
 
-    private final DocumentParserFactory parserFactory;
-    private final List<ChunkStrategy> chunkStrategies;
+    private final SpringAiDocumentReader documentReader;
+    private final ExcelParser excelParser;
     private final ChunkRepository chunkRepository;
     private final RecursiveChunker recursiveChunker;
     private final TrueSemanticChunker trueSemanticChunker;
@@ -71,13 +71,22 @@ public class DocumentService {
     public List<ChunkDto> uploadAndChunk(MultipartFile file, ChunkRequest request) {
         String fileName = file.getOriginalFilename();
         String extension = getFileExtension(fileName);
-
-        DocumentParser parser = parserFactory.getParser(extension);
         String content;
         try {
-            content = parser.parse(file.getBytes());
+            if (excelParser.supports(extension)) {
+                // Excel 文件使用自定义解析器（保留 Sheet 结构）
+                content = excelParser.parse(file.getBytes());
+            } else {
+                // 其他文件使用 Spring AI 标准解析器
+                List<Document> documents = documentReader.read(file.getBytes(), extension);
+                content = documentReader.extractText(documents);
+            }
         } catch (IOException e) {
             throw new RuntimeException("Failed to parse document", e);
+        }
+
+        if (content.isEmpty()) {
+            throw new RuntimeException("Document content is empty");
         }
 
         return processContent(content, fileName, request);
@@ -106,11 +115,14 @@ public class DocumentService {
             case "hierarchical":
                 chunks = chunkWithHierarchical(content, request);
                 break;
+            case "fixed_length":
+            case "hybrid":
+            case "custom_rule":
+                // 已删除的策略，映射到递归分块
+                chunks = chunkWithRecursive(content, request);
+                break;
             default:
-                // 使用传统分块策略
-                ChunkConfig config = buildChunkConfig(request);
-                ChunkStrategy chunkStrategy = getChunkStrategy(strategy);
-                chunks = chunkStrategy.chunk(content, config);
+                throw new IllegalArgumentException("不支持的分块策略: " + strategy);
         }
 
         return saveAndIndexChunks(chunks, documentName, strategy, request.getTags());
@@ -347,24 +359,6 @@ public class DocumentService {
     }
 
     /**
-     * 构建通用分块配置
-     */
-    private ChunkConfig buildChunkConfig(ChunkRequest request) {
-        ChunkConfig config = new ChunkConfig();
-        if (request.getChunkSize() != null) config.setChunkSize(request.getChunkSize());
-        if (request.getOverlap() != null) config.setOverlap(request.getOverlap());
-        if (request.getKeepHeaders() != null) config.setKeepHeaders(request.getKeepHeaders());
-        if (request.getMinParagraphLength() != null)
-            config.setMinParagraphLength(request.getMinParagraphLength());
-        if (request.getDelimiters() != null) config.setDelimiters(request.getDelimiters());
-        if (request.getHeaderLevels() != null) {
-            Integer[] levels = request.getHeaderLevels();
-            config.setHeaderLevels(Arrays.stream(levels).mapToInt(Integer::intValue).toArray());
-        }
-        return config;
-    }
-
-    /**
      * 构建递归分块配置
      */
     private RecursiveChunkConfig buildRecursiveConfig(ChunkRequest request) {
@@ -444,16 +438,6 @@ public class DocumentService {
         }
 
         return config;
-    }
-
-    /**
-     * 获取分块策略
-     */
-    private ChunkStrategy getChunkStrategy(String strategyName) {
-        return chunkStrategies.stream()
-                .filter(s -> s.getName().equals(strategyName))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Unknown strategy: " + strategyName));
     }
 
     /**

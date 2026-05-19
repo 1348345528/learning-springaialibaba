@@ -28,7 +28,7 @@ public class UploadRequest {
     /**
      * 分块策略名称
      * <p>
-     * 支持的策略：fixed_length, semantic, hybrid, custom_rule, recursive, true_semantic, hierarchical
+     * 支持的策略：recursive, true_semantic, hierarchical, semantic_boundary
      * </p>
      */
     private String strategy;

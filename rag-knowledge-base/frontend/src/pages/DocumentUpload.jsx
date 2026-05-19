@@ -70,19 +70,6 @@ const DEFAULT_CONFIGS = {
     childOverlap: 20,
     childSplitStrategy: 'RECURSIVE',
   },
-  fixed_length: {
-    chunkSize: 500,
-    overlap: 50,
-  },
-  hybrid: {
-    chunkSize: 500,
-    overlap: 50,
-    semanticThreshold: 0.5,
-  },
-  custom_rule: {
-    separators: ['\n\n', '\n'],
-    chunkSize: 500,
-  },
 };
 
 const DocumentUpload = () => {
@@ -290,115 +277,6 @@ const DocumentUpload = () => {
         return <SemanticChunkConfig {...commonProps} />;
       case 'hierarchical':
         return <HierarchicalChunkConfig {...commonProps} />;
-      case 'fixed_length':
-        return (
-          <Card size="small">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <div>
-                <Text strong>分块大小</Text>
-                <Input
-                  type="number"
-                  min={100}
-                  max={4000}
-                  value={config.chunkSize || 500}
-                  onChange={(e) =>
-                    handleConfigChange({ ...config, chunkSize: parseInt(e.target.value) || 500 })
-                  }
-                  style={{ width: '100%', marginTop: 8 }}
-                  addonAfter="字符"
-                />
-              </div>
-              <div>
-                <Text strong>重叠大小</Text>
-                <Input
-                  type="number"
-                  min={0}
-                  max={config.chunkSize || 500}
-                  value={config.overlap || 50}
-                  onChange={(e) =>
-                    handleConfigChange({ ...config, overlap: parseInt(e.target.value) || 0 })
-                  }
-                  style={{ width: '100%', marginTop: 8 }}
-                  addonAfter="字符"
-                />
-              </div>
-            </Space>
-          </Card>
-        );
-      case 'hybrid':
-        return (
-          <Card size="small">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <div>
-                <Text strong>基础分块大小</Text>
-                <Input
-                  type="number"
-                  min={100}
-                  max={4000}
-                  value={config.chunkSize || 500}
-                  onChange={(e) =>
-                    handleConfigChange({ ...config, chunkSize: parseInt(e.target.value) || 500 })
-                  }
-                  style={{ width: '100%', marginTop: 8 }}
-                  addonAfter="字符"
-                />
-              </div>
-              <div>
-                <Text strong>语义阈值</Text>
-                <Input
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={config.semanticThreshold || 0.5}
-                  onChange={(e) =>
-                    handleConfigChange({
-                      ...config,
-                      semanticThreshold: parseFloat(e.target.value) || 0.5,
-                    })
-                  }
-                  style={{ width: '100%', marginTop: 8 }}
-                />
-              </div>
-            </Space>
-          </Card>
-        );
-      case 'custom_rule':
-        return (
-          <Card size="small">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <div>
-                <Text strong>自定义分隔符（每行一个）</Text>
-                <TextArea
-                  value={(config.separators || []).join('\n')}
-                  onChange={(e) =>
-                    handleConfigChange({
-                      ...config,
-                      separators: e.target.value.split('\n').filter(Boolean),
-                    })
-                  }
-                  placeholder={'\\n\\n\n\\n\n。'}
-                  rows={4}
-                  style={{ marginTop: 8 }}
-                />
-              </div>
-              <div>
-                <Text strong>最大分块大小</Text>
-                <Input
-                  type="number"
-                  min={100}
-                  max={4000}
-                  value={config.chunkSize || 500}
-                  onChange={(e) =>
-                    handleConfigChange({ ...config, chunkSize: parseInt(e.target.value) || 500 })
-                  }
-                  style={{ width: '100%', marginTop: 8 }}
-                  addonAfter="字符"
-                />
-              </div>
-            </Space>
-          </Card>
-        );
       default:
         return null;
     }

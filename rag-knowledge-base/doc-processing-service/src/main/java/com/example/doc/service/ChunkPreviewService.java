@@ -46,7 +46,6 @@ public class ChunkPreviewService {
     public ChunkPreviewResponse preview(ChunkPreviewRequest request) {
         String content = request.getContent();
         String strategy = request.getStrategy();
-
         log.info("开始分块预览，策略: {}, 文本长度: {}", strategy, content.length());
 
         List<TextChunk> chunks;
@@ -64,14 +63,13 @@ public class ChunkPreviewService {
                 chunks = previewHierarchical(content, request, statistics);
                 break;
             case "fixed_length":
-                chunks = previewFixedLength(content, request, statistics);
-                break;
             case "hybrid":
-                // 混合分块：使用递归分块作为基础
+            case "custom_rule":
+                // 旧策略，映射到递归分块
                 chunks = previewRecursive(content, request, statistics);
                 break;
-            case "custom_rule":
-                // 自定义规则：使用递归分块，支持自定义分隔符
+            case "semantic_boundary":
+                // 语义边界分块暂用递归分块替代（SemanticBoundaryChunker 待接入）
                 chunks = previewRecursive(content, request, statistics);
                 break;
             default:
@@ -127,46 +125,6 @@ public class ChunkPreviewService {
                 "childSplitStrategy", config.getChildSplitStrategy().name()
         ));
         return hierarchicalChunker.chunk(content, config);
-    }
-
-    /**
-     * 使用固定长度分块策略预览
-     */
-    private List<TextChunk> previewFixedLength(String content, ChunkPreviewRequest request,
-                                                Map<String, Object> statistics) {
-        int chunkSize = request.getChunkSize() != null ? request.getChunkSize() : 500;
-        int overlap = request.getOverlap() != null ? request.getOverlap() : 0;
-
-        List<TextChunk> chunks = new ArrayList<>();
-        int start = 0;
-        int index = 0;
-
-        while (start < content.length()) {
-            int end = Math.min(start + chunkSize, content.length());
-            String chunkContent = content.substring(start, end);
-
-            TextChunk chunk = TextChunk.builder()
-                    .content(chunkContent)
-                    .index(index)
-                    .startPos(start)
-                    .endPos(end)
-                    .build();
-            chunks.add(chunk);
-
-            start = end - overlap;
-            if (start <= chunks.get(chunks.size() - 1).getStartPos()) {
-                start = end; // 避免无限循环
-            }
-            index++;
-        }
-
-        statistics.put("config", Map.of(
-                "chunkSize", chunkSize,
-                "overlap", overlap,
-                "totalChunks", chunks.size()
-        ));
-
-        return chunks;
     }
 
     /**
