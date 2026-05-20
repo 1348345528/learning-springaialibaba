@@ -80,13 +80,12 @@ public class McpToolRegistryService {
             McpSchema.ListToolsResult toolsResult = client.listTools();
             List<McpSchema.Tool> tools = toolsResult.tools();
             for (McpSchema.Tool tool : tools) {
-                // 用工具名直接作为 key，前端传的就是工具名
-                // 注意：不同 Server 的同名工具会互相覆盖，避免注册同名工具
                 ToolCallback callback = SyncMcpToolCallback.builder()
                         .mcpClient(client)
                         .tool(tool)
                         .build();
-                toolRegistry.put(tool.name(), callback);
+                String key = id + ":" + tool.name();
+                toolRegistry.put(key, callback);
                 toolInfos.add(new McpToolInfo(tool.name(), tool.description(), dto.getName()));
             }
         } catch (Exception e) {
@@ -119,7 +118,7 @@ public class McpToolRegistryService {
         McpServerInfo serverInfo = serverMap.remove(serverId);
         if (serverInfo != null && serverInfo.getTools() != null) {
             for (McpToolInfo tool : serverInfo.getTools()) {
-                toolRegistry.remove(tool.getName());
+                toolRegistry.remove(serverId + ":" + tool.getName());
             }
         }
         log.info("MCP Server [{}] disconnected", serverId);
@@ -135,12 +134,14 @@ public class McpToolRegistryService {
         }
         return Arrays.stream(toolNames)
                 .map(name -> {
+                    // 精确匹配 serverId:toolName
                     ToolCallback cb = toolRegistry.get(name);
                     if (cb != null) return cb;
-                    // 兼容 serverId:toolName 格式
-                    int idx = name.indexOf(':');
-                    if (idx > 0) {
-                        return toolRegistry.get(name.substring(idx + 1));
+                    // 输入为 serverName:toolName 或旧格式裸工具名 → 后缀匹配
+                    for (String key : toolRegistry.keySet()) {
+                        if (key.endsWith(":" + name) || key.equals(name)) {
+                            return toolRegistry.get(key);
+                        }
                     }
                     return null;
                 })
