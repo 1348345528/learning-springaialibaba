@@ -22,6 +22,9 @@ public class VectorController {
 
     private final VectorService vectorService;
 
+    /**
+     * 插入向量：文本 → DashScope Embedding 稠密向量 → Milvus（BM25 稀疏向量由 Milvus 自动生成）
+     */
     @PostMapping("/index")
     public Map<String, String> indexChunk(@Valid @RequestBody IndexRequest request) {
         vectorService.indexChunk(
@@ -34,6 +37,9 @@ public class VectorController {
         return Map.of("status", "ok", "id", request.getId());
     }
 
+    /**
+     * 稠密向量检索：HNSW 索引 + COSINE 相似度，支持元数据过滤
+     */
     @PostMapping("/search")
     public List<SearchResult> search(@Valid @RequestBody SearchRequest request) {
         return vectorService.search(
@@ -43,6 +49,9 @@ public class VectorController {
         );
     }
 
+    /**
+     * 混合检索：稠密向量(HNSW) + 稀疏向量(BM25) 双路召回 → RRF/Weighted 融合
+     */
     @PostMapping("/search/hybrid")
     public List<SearchResult> hybridSearch(@Valid @RequestBody HybridSearchRequest request) {
         return vectorService.hybridSearch(
@@ -55,6 +64,9 @@ public class VectorController {
         );
     }
 
+    /**
+     * 全流程检索：HyDE 查询扩展 → 混合检索(HNSW+BM25) → RRF 融合 → DashScope gte-rerank 精排
+     */
     @PostMapping("/search/full")
     public List<SearchResult> fullPipelineSearch(@Valid @RequestBody HybridSearchRequest request) {
         return vectorService.fullPipelineSearch(
