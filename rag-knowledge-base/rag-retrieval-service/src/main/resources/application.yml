@@ -25,5 +25,11 @@ milvus:
   collection: rag_chunks
   dimension: 1024
 
+reranker:
+  model: gte-rerank
+
+hyde:
+  model: qwen-plus
+
 jwt:
   secret: mySecretKeyForJWTTokenGenerationAndValidation2026!Secure

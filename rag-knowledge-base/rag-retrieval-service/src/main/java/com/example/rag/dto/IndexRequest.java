@@ -12,4 +12,6 @@ public class IndexRequest {
     private String content;
 
     private String documentName;
+    private String docId;
+    private Integer chunkIndex;
 }
