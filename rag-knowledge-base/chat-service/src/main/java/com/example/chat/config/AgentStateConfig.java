@@ -1,9 +1,9 @@
 package com.example.chat.config;
 
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
+import org.redisson.api.RedissonClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
 
 import java.time.Duration;
 
@@ -23,10 +23,16 @@ public class AgentStateConfig {
     /** Redis TTL 标记键前缀 */
     public static final String ALIVE_KEY_PREFIX = "agent:alive:";
 
+    /** RedisSaver checkpoint key pattern (for TTL management) */
+    public static final String CHECKPOINT_KEY_PREFIX = "checkpoints:";
+    public static final String THREAD_META_KEY_PREFIX = "thread_meta:";
+    public static final String THREAD_REVERSE_KEY_PREFIX = "thread_meta_reverse:";
+    public static final String LOCK_KEY_PREFIX = "checkpoint:";
+
     @Bean
-    public RedisSaver redisSaver(RedisConnectionFactory connectionFactory) {
+    public RedisSaver redisSaver(RedissonClient redissonClient) {
         return RedisSaver.builder()
-//                .connectionFactory(connectionFactory)
+                .redisson(redissonClient)
                 .build();
     }
 

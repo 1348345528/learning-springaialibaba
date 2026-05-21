@@ -31,6 +31,7 @@
         <spring-ai-alibaba.version>1.1.2.0</spring-ai-alibaba.version>
         <jjwt.version>0.12.5</jjwt.version>
         <fastjson.version>2.0.57</fastjson.version>
+        <redisson.version>3.37.0</redisson.version>
         <mysql-connector.version>8.4.0</mysql-connector.version>
         <tika.version>2.9.1</tika.version>
         <poi-ooxml.version>5.2.5</poi-ooxml.version>
@@ -93,6 +94,13 @@
                 <groupId>com.alibaba</groupId>
                 <artifactId>fastjson</artifactId>
                 <version>${fastjson.version}</version>
+            </dependency>
+
+            <!-- Redisson (Redis client for RedisSaver) -->
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson</artifactId>
+                <version>${redisson.version}</version>
             </dependency>
 
             <!-- Database -->
