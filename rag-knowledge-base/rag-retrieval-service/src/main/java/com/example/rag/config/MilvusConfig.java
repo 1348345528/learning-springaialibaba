@@ -25,7 +25,7 @@ public class MilvusConfig {
     public MilvusClientV2 milvusClient() {
         ConnectConfig.ConnectConfigBuilder builder = ConnectConfig.builder()
                 .uri(String.format("http://%s:%d", host, port))
-                .connectTimeoutMs(5000L);
+                .connectTimeoutMs(2000L);
 
         if (username != null && !username.isEmpty()) {
             builder.token(username + ":" + password);

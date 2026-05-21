@@ -34,6 +34,7 @@ import ChunkStrategySelector from '../components/ChunkStrategySelector';
 import RecursiveChunkConfig from '../components/ChunkConfig/RecursiveChunkConfig';
 import SemanticChunkConfig from '../components/ChunkConfig/SemanticChunkConfig';
 import HierarchicalChunkConfig from '../components/ChunkConfig/HierarchicalChunkConfig';
+import SemanticBoundaryChunkConfig from '../components/ChunkConfig/SemanticBoundaryChunkConfig';
 import ChunkPreview from '../components/ChunkPreview';
 import ChunkStatistics from '../components/ChunkStatistics';
 
@@ -46,16 +47,16 @@ const EMBED_MODELS = [
   { value: 'Qwen/Qwen3-Embedding-8B', label: 'Qwen3-Embedding-8B (4096维)' },
 ];
 
-// 默认配置
+// 默认配置 — key 必须匹配后端 ChunkStrategy Bean 名
 const DEFAULT_CONFIGS = {
-  recursive: {
+  recursiveChunker: {
     chunkSize: 500,
     overlap: 50,
     minChunkSize: 50,
     keepSeparator: true,
     separators: ['\n\n', '\n', '。', '！', '？', '；', '，', ' ', ''],
   },
-  true_semantic: {
+  trueSemanticChunker: {
     similarityThreshold: 0.45,
     useDynamicThreshold: true,
     percentileThreshold: 0.8,
@@ -63,12 +64,16 @@ const DEFAULT_CONFIGS = {
     minChunkSize: 100,
     maxChunkSize: 2000,
   },
-  hierarchical: {
+  hierarchicalChunker: {
     parentChunkSize: 2000,
     parentOverlap: 200,
     childChunkSize: 200,
     childOverlap: 20,
     childSplitStrategy: 'RECURSIVE',
+  },
+  semanticBoundaryChunker: {
+    chunkSize: 1000,
+    minChunkSize: 100,
   },
 };
 
@@ -80,8 +85,8 @@ const DocumentUpload = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   // 分块配置
-  const [strategy, setStrategy] = useState('recursive');
-  const [config, setConfig] = useState(DEFAULT_CONFIGS.recursive);
+  const [strategy, setStrategy] = useState('recursiveChunker');
+  const [config, setConfig] = useState(DEFAULT_CONFIGS.recursiveChunker);
   const [embedModel, setEmbedModel] = useState('Qwen/Qwen3-Embedding-8B');
   const [customPrompt, setCustomPrompt] = useState('');
 
@@ -165,7 +170,8 @@ const DocumentUpload = () => {
         ...config,
       };
 
-      const result = await chunkApi.preview(requestData);
+      const response = await chunkApi.preview(requestData);
+      const result = response.data;
 
       if (result && result.chunks) {
         setPreviewChunks(result.chunks);
@@ -258,8 +264,8 @@ const DocumentUpload = () => {
     setPreviewChunks([]);
     setPreviewError(null);
     setCurrentStep(0);
-    setStrategy('recursive');
-    setConfig(DEFAULT_CONFIGS.recursive);
+    setStrategy('recursiveChunker');
+    setConfig(DEFAULT_CONFIGS.recursiveChunker);
   };
 
   // 渲染策略配置组件
@@ -271,12 +277,14 @@ const DocumentUpload = () => {
     };
 
     switch (strategy) {
-      case 'recursive':
+      case 'recursiveChunker':
         return <RecursiveChunkConfig {...commonProps} />;
-      case 'true_semantic':
+      case 'trueSemanticChunker':
         return <SemanticChunkConfig {...commonProps} />;
-      case 'hierarchical':
+      case 'hierarchicalChunker':
         return <HierarchicalChunkConfig {...commonProps} />;
+      case 'semanticBoundaryChunker':
+        return <SemanticBoundaryChunkConfig {...commonProps} />;
       default:
         return null;
     }

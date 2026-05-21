@@ -5,15 +5,16 @@ import {
   ScissorOutlined,
   BulbOutlined,
   ApartmentOutlined,
+  BorderOutlined,
   CheckOutlined,
 } from '@ant-design/icons';
 
 const { Text, Paragraph } = Typography;
 
-// 分块策略配置
+// 分块策略配置 — key 必须匹配后端 ChunkStrategy Bean 名
 const STRATEGIES = [
   {
-    key: 'recursive',
+    key: 'recursiveChunker',
     name: '递归分块',
     description: '基于分隔符层级递归分割，保留文本结构完整性',
     icon: <ScissorOutlined style={{ fontSize: 24 }} />,
@@ -22,7 +23,7 @@ const STRATEGIES = [
     features: ['保留段落结构', '智能分隔符识别', '适合结构化文档'],
   },
   {
-    key: 'true_semantic',
+    key: 'trueSemanticChunker',
     name: '语义分块',
     description: '基于语义相似度动态分块，保持语义连贯性',
     icon: <BulbOutlined style={{ fontSize: 24 }} />,
@@ -31,7 +32,7 @@ const STRATEGIES = [
     features: ['语义感知', '动态阈值', '适合长文本'],
   },
   {
-    key: 'hierarchical',
+    key: 'hierarchicalChunker',
     name: '分层分块',
     description: '父块和子块双层结构，支持多粒度检索',
     icon: <ApartmentOutlined style={{ fontSize: 24 }} />,
@@ -39,9 +40,18 @@ const STRATEGIES = [
     badgeColor: 'purple',
     features: ['父子层级', '多粒度检索', '适合复杂文档'],
   },
+  {
+    key: 'semanticBoundaryChunker',
+    name: '语义边界分块',
+    description: '在句子/段落边界处分割，绝不切断句子，适合需要保持完整语义单元的场景',
+    icon: <BorderOutlined style={{ fontSize: 24 }} />,
+    badge: '基础',
+    badgeColor: 'cyan',
+    features: ['不切断句子', '段落优先', '简单高效'],
+  },
 ];
 
-const ChunkStrategySelector = ({ value = 'recursive', onChange, disabled = false }) => {
+const ChunkStrategySelector = ({ value = 'recursiveChunker', onChange, disabled = false }) => {
   return (
     <div>
       <Row gutter={[16, 16]}>
@@ -177,10 +187,10 @@ const ChunkStrategySelector = ({ value = 'recursive', onChange, disabled = false
 
 ChunkStrategySelector.propTypes = {
   value: PropTypes.oneOf([
-    'recursive',
-    'true_semantic',
-    'hierarchical',
-    'semantic_boundary',
+    'recursiveChunker',
+    'trueSemanticChunker',
+    'hierarchicalChunker',
+    'semanticBoundaryChunker',
   ]),
   onChange: PropTypes.func.isRequired,
   disabled: PropTypes.bool,

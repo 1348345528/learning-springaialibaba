@@ -23,11 +23,11 @@ public class AgentStateConfig {
     /** Redis TTL 标记键前缀 */
     public static final String ALIVE_KEY_PREFIX = "agent:alive:";
 
-    /** RedisSaver checkpoint key pattern (for TTL management) */
-    public static final String CHECKPOINT_KEY_PREFIX = "checkpoints:";
-    public static final String THREAD_META_KEY_PREFIX = "thread_meta:";
-    public static final String THREAD_REVERSE_KEY_PREFIX = "thread_meta_reverse:";
-    public static final String LOCK_KEY_PREFIX = "checkpoint:";
+    /** RedisSaver checker key patterns — must match RedisSaver internals */
+    public static final String CHECKPOINT_KEY_PREFIX = "graph:checkpoint:content:";
+    public static final String THREAD_META_KEY_PREFIX = "graph:thread:meta:";
+    public static final String THREAD_REVERSE_KEY_PREFIX = "graph:thread:reverse:";
+    public static final String LOCK_KEY_PREFIX = "graph:checkpoint:lock:";
 
     @Bean
     public RedisSaver redisSaver(RedissonClient redissonClient) {

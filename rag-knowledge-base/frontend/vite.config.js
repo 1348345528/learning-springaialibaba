@@ -19,11 +19,11 @@ export default defineConfig({
         changeOrigin: true
       },
       '/api/chunk': {
-        target: 'http://localhost:8082',
+        target: 'http://localhost:8081',
         changeOrigin: true
       },
       '/api/doc': {
-        target: 'http://localhost:8082',
+        target: 'http://localhost:8081',
         changeOrigin: true
       },
       '/auth': {

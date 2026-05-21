@@ -44,12 +44,14 @@ public class MilvusService {
 
     @PostConstruct
     public void initCollection() {
-        initWithRetry(10, 3000);
+        // 异步初始化，不阻塞应用启动
+        new Thread(this::initWithRetry, "milvus-init").start();
     }
 
-    private void initWithRetry(int maxRetries, long initialDelayMs) {
+    private void initWithRetry() {
+        int maxRetries = 10;
+        long delayMs = 3000;
         int attempt = 0;
-        long delayMs = initialDelayMs;
 
         while (attempt < maxRetries) {
             attempt++;
@@ -62,13 +64,14 @@ public class MilvusService {
                     createCollectionWithSchema();
                 }
                 initialized = true;
+                log.info("Milvus initialized successfully");
                 return;
             } catch (Exception e) {
                 log.warn("Milvus init failed (attempt {}/{}): {}", attempt, maxRetries, e.getMessage());
                 if (attempt < maxRetries) {
                     try {
                         Thread.sleep(delayMs);
-                        delayMs *= 2;
+                        delayMs = Math.min(delayMs * 2, 60000);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
@@ -274,7 +277,23 @@ public class MilvusService {
     private void ensureInitialized() {
         if (!initialized) {
             log.warn("Milvus not initialized, lazy initializing");
-            initWithRetry(3, 2000);
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    if (collectionExists()) {
+                        loadCollectionIfNeeded();
+                    } else {
+                        createCollectionWithSchema();
+                    }
+                    initialized = true;
+                    return;
+                } catch (Exception e) {
+                    if (attempt == 3) {
+                        throw new RuntimeException("Milvus is not available", e);
+                    }
+                    try { Thread.sleep(1000); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+                }
+            }
         }
     }
 
