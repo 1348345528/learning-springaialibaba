@@ -1,38 +1,63 @@
 package com.example.chat.service;
 
+import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
-import com.alibaba.cloud.ai.graph.NodeOutput;
+import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
+import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.example.chat.dto.ChatRequest;
 import com.example.chat.model.ChatMemoryMessage;
 import com.example.chat.repository.MysqlChatMemoryRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
-import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class RagChatService {
 
-    private final ChatClient chatClient;
+    private static final String AGENT_INSTRUCTION = """
+            You are a helpful AI assistant for the RAG Knowledge Base system.
+
+            When you need factual information or background knowledge, use the search_knowledge_base tool to retrieve relevant document chunks.
+            Always base your answers on the retrieved context.
+            If the retrieved context doesn't contain relevant information, say so honestly.
+
+            Keep responses concise, accurate, and helpful.
+            """;
+
+    private final ChatModel chatModel;
+    private final MemorySaver memorySaver;
+    private final ToolCallback ragRetrievalCallback;
     private final McpToolRegistryService mcpToolRegistry;
-    private final org.springframework.web.reactive.function.client.WebClient webClient;
     private final MultiLevelChatMemory chatMemory;
-    private final HistorySummaryService historySummaryService;
     private final MysqlChatMemoryRepository mysqlRepository;
+    private final AgentStateManager agentStateManager;
+
+    public RagChatService(ChatModel chatModel,
+                          MemorySaver memorySaver,
+                          ToolCallback ragRetrievalCallback,
+                          McpToolRegistryService mcpToolRegistry,
+                          MultiLevelChatMemory chatMemory,
+                          MysqlChatMemoryRepository mysqlRepository,
+                          AgentStateManager agentStateManager) {
+        this.chatModel = chatModel;
+        this.memorySaver = memorySaver;
+        this.ragRetrievalCallback = ragRetrievalCallback;
+        this.mcpToolRegistry = mcpToolRegistry;
+        this.chatMemory = chatMemory;
+        this.mysqlRepository = mysqlRepository;
+        this.agentStateManager = agentStateManager;
+    }
 
     public Flux<ServerSentEvent<String>> chatStream(ChatRequest request) {
         String conversationId = request.getConversationId();
@@ -40,68 +65,63 @@ public class RagChatService {
         // 1. 保存用户消息
         chatMemory.add(conversationId, ChatMemoryMessage.user(request.getMessage()));
 
-        // 2. 从知识库检索相关知识块
-        List<RetrievalResult> chunks = retrieveChunks(request.getMessage(), 5).block();
-        String context = buildContext(chunks);
+        // 2. 组装 ToolCallback 列表
+        List<ToolCallback> allTools = new ArrayList<>();
+        allTools.add(ragRetrievalCallback);
+        ToolCallback[] mcpTools = mcpToolRegistry.lookup(request.getToolNames());
+        if (mcpTools.length > 0) {
+            allTools.addAll(List.of(mcpTools));
+        }
 
-        // 3. 加载历史会话并压缩成摘要
-        List<ChatMemoryMessage> recentHistory = chatMemory.getRecent(conversationId, 10);
-        String historySummary = historySummaryService.summarize(recentHistory);
-
-        // 4. 构建系统提示词（含历史摘要和 RAG 上下文）
-        String systemPrompt = buildSystemPrompt(context, historySummary);
-
-        // 5. 从内存 Map 查询用户选中的 MCP 工具
-        ToolCallback[] selectedTools = mcpToolRegistry.lookup(request.getToolNames());
-
-        // 6. 每次请求动态构建 ReactAgent，注入 tools + system prompt
-        ReactAgent agent = ReactAgent.builder()
-                .name("rag_agent")
-                .chatClient(chatClient)
-                .systemPrompt(systemPrompt)
-                .tools(selectedTools)
+        // 3. 构建配置
+        RunnableConfig config = RunnableConfig.builder()
+                .threadId(conversationId)
                 .build();
 
-        // 7. 流式执行 ReAct 循环
+        // 4. 过期检测：Redis TTL 标记不存在 → 从 MySQL 拼历史上下文
+        String userMessage = request.getMessage();
+        if (!agentStateManager.isAlive(conversationId)) {
+            String context = agentStateManager.buildContextPrefix(conversationId);
+            if (context != null) {
+                userMessage = context + userMessage;
+            }
+        }
+
+        // 5. 构建 ReactAgent（MCP 工具动态变化，每次请求构建）
+        ReactAgent agent = ReactAgent.builder()
+                .name("rag_agent")
+                .model(chatModel)
+                .instruction(AGENT_INSTRUCTION)
+                .tools(allTools.toArray(new ToolCallback[0]))
+                .saver(memorySaver)
+                .build();
+
+        // 6. 流式执行
         StringBuilder fullContent = new StringBuilder();
 
         Flux<NodeOutput> streamFlux;
         try {
-            streamFlux = agent.stream(request.getMessage());
+            streamFlux = agent.stream(userMessage, config);
         } catch (GraphRunnerException e) {
             log.error("Failed to start agent stream", e);
             return Flux.error(e);
         }
 
         Flux<String> tokenFlux = streamFlux
-                .flatMap(nodeOutput -> {
-                    if (!(nodeOutput instanceof StreamingOutput)) {
-                        return Flux.empty();
-                    }
-                    StreamingOutput streamingOutput = (StreamingOutput) nodeOutput;
-                    OutputType type = streamingOutput.getOutputType();
-                    if (type == OutputType.AGENT_MODEL_STREAMING) {
-                        Object msg = streamingOutput.message();
-                        if (msg instanceof AssistantMessage) {
-                            String text = ((AssistantMessage) msg).getText();
-                            if (text != null && !text.isEmpty()) {
-                                return Flux.just(text);
-                            }
-                        }
-                    }
-                    return Flux.empty();
-                })
+                .flatMap(nodeOutput -> extractToken(nodeOutput))
                 .doOnNext(token -> fullContent.append(token));
 
-        // 8. 在流结束时添加 [DONE] 标记，并保存 AI 回复
         return tokenFlux
                 .map(token -> ServerSentEvent.builder(token).build())
                 .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").build())
                         .doOnComplete(() -> {
+                            // 7. 保存 AI 回复 + 续期 TTL
                             String response = fullContent.toString();
                             if (!response.isEmpty()) {
                                 chatMemory.add(conversationId, ChatMemoryMessage.assistant(response));
                             }
+                            agentStateManager.markAlive(conversationId);
+
                             long msgCount = chatMemory.getMessageCount(conversationId);
                             if (msgCount <= 2) {
                                 String title = request.getMessage();
@@ -113,66 +133,19 @@ public class RagChatService {
                         }));
     }
 
-    private String buildSystemPrompt(String context, String historySummary) {
-        StringBuilder prompt = new StringBuilder();
-        prompt.append("You are a helpful AI assistant that answers questions based on the provided context from the knowledge base.\n");
-        prompt.append("If the context doesn't contain relevant information, say you don't know based on the available information.\n");
-
-        if (!historySummary.isEmpty()) {
-            prompt.append("\nConversation history summary:\n").append(historySummary).append("\n");
+    /** 从 NodeOutput 中提取模型生成的文本 token。 */
+    private static Flux<String> extractToken(NodeOutput nodeOutput) {
+        if (nodeOutput instanceof StreamingOutput streamingOutput) {
+            if (streamingOutput.getOutputType() == OutputType.AGENT_MODEL_STREAMING) {
+                Object msg = streamingOutput.message();
+                if (msg instanceof AssistantMessage assistantMsg) {
+                    String text = assistantMsg.getText();
+                    if (text != null && !text.isEmpty()) {
+                        return Flux.just(text);
+                    }
+                }
+            }
         }
-
-        prompt.append("\nContext from knowledge base:\n").append(context);
-        return prompt.toString();
+        return Flux.empty();
     }
-
-    private Mono<List<RetrievalResult>> retrieveChunks(String query, int topK) {
-        try {
-            @SuppressWarnings("unchecked")
-            Mono<List<Map<String, Object>>> responseMono = webClient.post()
-                    .uri("/api/vector/search")
-                    .bodyValue(Map.of("query", query, "topK", topK))
-                    .retrieve()
-                    .bodyToMono(new org.springframework.core.ParameterizedTypeReference<List<Map<String, Object>>>() {})
-                    .timeout(Duration.ofSeconds(30))
-                    .doOnError(e -> log.error("Failed to retrieve chunks from RAG service: {}", e.getMessage()));
-
-            return responseMono.map(list -> {
-                return list.stream()
-                        .map(this::toRetrievalResult)
-                        .toList();
-            }).onErrorReturn(List.of());
-        } catch (Exception e) {
-            log.error("Failed to retrieve chunks", e);
-            return Mono.just(List.of());
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private RetrievalResult toRetrievalResult(Map<String, Object> map) {
-        Object contentObj = map.get("content");
-        Object documentNameObj = map.get("documentName");
-        Object scoreObj = map.get("score");
-
-        String content = contentObj != null ? contentObj.toString() : "";
-        String documentName = documentNameObj != null ? documentNameObj.toString() : "";
-        float score = scoreObj != null ? Float.parseFloat(scoreObj.toString()) : 0.0f;
-
-        return new RetrievalResult(content, documentName, score);
-    }
-
-    private String buildContext(List<RetrievalResult> chunks) {
-        if (chunks.isEmpty()) {
-            return "No relevant information found in the knowledge base.";
-        }
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < chunks.size(); i++) {
-            RetrievalResult chunk = chunks.get(i);
-            sb.append("[%d] %s (source: %s, score: %.2f)\n"
-                    .formatted(i + 1, chunk.content(), chunk.documentName(), chunk.score()));
-        }
-        return sb.toString();
-    }
-
-    record RetrievalResult(String content, String documentName, float score) {}
 }
