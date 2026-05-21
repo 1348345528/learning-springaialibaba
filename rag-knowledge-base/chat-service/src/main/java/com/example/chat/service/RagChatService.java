@@ -2,7 +2,7 @@ package com.example.chat.service;
 
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
-import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
+import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
@@ -36,7 +36,7 @@ public class RagChatService {
             """;
 
     private final ChatModel chatModel;
-    private final MemorySaver memorySaver;
+    private final RedisSaver redisSaver;
     private final ToolCallback ragRetrievalCallback;
     private final McpToolRegistryService mcpToolRegistry;
     private final MultiLevelChatMemory chatMemory;
@@ -44,14 +44,14 @@ public class RagChatService {
     private final AgentStateManager agentStateManager;
 
     public RagChatService(ChatModel chatModel,
-                          MemorySaver memorySaver,
+                          RedisSaver redisSaver,
                           ToolCallback ragRetrievalCallback,
                           McpToolRegistryService mcpToolRegistry,
                           MultiLevelChatMemory chatMemory,
                           MysqlChatMemoryRepository mysqlRepository,
                           AgentStateManager agentStateManager) {
         this.chatModel = chatModel;
-        this.memorySaver = memorySaver;
+        this.redisSaver = redisSaver;
         this.ragRetrievalCallback = ragRetrievalCallback;
         this.mcpToolRegistry = mcpToolRegistry;
         this.chatMemory = chatMemory;
@@ -93,7 +93,7 @@ public class RagChatService {
                 .model(chatModel)
                 .instruction(AGENT_INSTRUCTION)
                 .tools(allTools.toArray(new ToolCallback[0]))
-                .saver(memorySaver)
+                .saver(redisSaver)
                 .build();
 
         // 6. 流式执行

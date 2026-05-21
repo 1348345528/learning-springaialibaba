@@ -1,17 +1,18 @@
 package com.example.chat.config;
 
-import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
+import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 
 import java.time.Duration;
 
 /**
  * Agent 状态管理配置。
  * <p>
- * 状态存储：MemorySaver（JVM 内存，读写零延迟）
- * TTL 管理：Redis 轻量标记键（agent:alive:{threadId}），由 AgentStateManager 维护
- * 降级恢复：TTL 到期后从 MySQL 加载历史回填
+ * 状态存储：RedisSaver（Redis 持久化，重启不丢失）
+ * TTL：12 小时，每次 agent.stream() 后由 AgentStateManager 续期
+ * 降级恢复：TTL 到期后从 MySQL 加载历史
  */
 @Configuration
 public class AgentStateConfig {
@@ -23,11 +24,12 @@ public class AgentStateConfig {
     public static final String ALIVE_KEY_PREFIX = "agent:alive:";
 
     @Bean
-    public MemorySaver memorySaver() {
-        return new MemorySaver();
+    public RedisSaver redisSaver(RedisConnectionFactory connectionFactory) {
+        return RedisSaver.builder()
+//                .connectionFactory(connectionFactory)
+                .build();
     }
 
-    /** 构建 Redis 存活标记 key */
     public static String aliveKey(String threadId) {
         return ALIVE_KEY_PREFIX + threadId;
     }

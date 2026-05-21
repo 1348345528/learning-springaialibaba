@@ -49,8 +49,7 @@ public class AgentStateManager {
 
         StringBuilder ctx = new StringBuilder("[以下是之前的对话历史，请基于此继续]\n");
         for (ChatMemoryMessage m : history) {
-            String role = "user".equals(m.role()) ? "用户" : "助手";
-            ctx.append(role).append(": ").append(m.content()).append("\n");
+            ctx.append(m.role()).append(": ").append(m.content()).append("\n");
         }
         ctx.append("---\n当前问题: ");
         return ctx.toString();
