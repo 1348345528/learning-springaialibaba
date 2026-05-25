@@ -37,8 +37,8 @@ const ChatQA = () => {
 
   const loadConversations = async () => {
     try {
-      const data = await conversationApi.list();
-      setConversations(data || []);
+      const response = await conversationApi.list();
+      setConversations(response.data || []);
     } catch (error) {
       console.error('Failed to load conversations:', error);
     }
@@ -104,7 +104,8 @@ const ChatQA = () => {
     if (!currentConversationId) {
       // 创建新会话
       try {
-        const newConv = await conversationApi.create('新会话');
+        const response = await conversationApi.create('新会话');
+        const newConv = response.data;
         currentConversationId = newConv.conversationId;
         setActiveConversationId(currentConversationId);
         setConversations([newConv, ...conversations]);

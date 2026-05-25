@@ -8,6 +8,7 @@ import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.example.chat.dto.ChatRequest;
+import com.example.chat.entity.ConversationEntity;
 import com.example.chat.hook.ChatHistorySyncHook;
 import com.example.chat.repository.jpa.ConversationJpaRepository;
 import com.alibaba.cloud.ai.graph.agent.hook.summarization.SummarizationHook;
@@ -21,6 +22,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @Slf4j
@@ -29,7 +31,13 @@ public class RagChatService {
     private static final String AGENT_INSTRUCTION = """
             You are a helpful AI assistant for the RAG Knowledge Base system.
 
-            When you need factual information or background knowledge, use the search_knowledge_base tool to retrieve relevant document chunks.
+            Available tools:
+            - search_knowledge_base: search document chunks from the knowledge base
+            - get_current_time: get current date and time
+            - calculate: evaluate mathematical expressions
+            - get_document_stats: list documents and chunk counts
+
+            When you need factual information, use search_knowledge_base to retrieve relevant document chunks.
             Always base your answers on the retrieved context.
             If the retrieved context doesn't contain relevant information, say so honestly.
 
@@ -38,7 +46,7 @@ public class RagChatService {
 
     private final ChatModel chatModel;
     private final RedisSaver redisSaver;
-    private final ToolCallback ragRetrievalCallback;
+    private final List<ToolCallback> builtinTools;
     private final McpToolRegistryService mcpToolRegistry;
     private final ChatHistorySyncHook chatHistorySyncHook;
     private final SummarizationHook summarizationHook;
@@ -46,14 +54,14 @@ public class RagChatService {
 
     public RagChatService(ChatModel chatModel,
                           RedisSaver redisSaver,
-                          ToolCallback ragRetrievalCallback,
+                          List<ToolCallback> builtinTools,
                           McpToolRegistryService mcpToolRegistry,
                           ChatHistorySyncHook chatHistorySyncHook,
                           SummarizationHook summarizationHook,
                           ConversationJpaRepository conversationRepo) {
         this.chatModel = chatModel;
         this.redisSaver = redisSaver;
-        this.ragRetrievalCallback = ragRetrievalCallback;
+        this.builtinTools = builtinTools;
         this.mcpToolRegistry = mcpToolRegistry;
         this.chatHistorySyncHook = chatHistorySyncHook;
         this.summarizationHook = summarizationHook;
@@ -61,11 +69,14 @@ public class RagChatService {
     }
 
     public Flux<ServerSentEvent<String>> chatStream(ChatRequest request) {
-        String conversationId = request.getConversationId();
+        String cid = request.getConversationId();
+        final String conversationId = (cid != null && !cid.isBlank()) ? cid : UUID.randomUUID().toString();
+
+        // 0. 确保 MySQL 里存在这个会话（前置创建）
+        ensureConversationExists(conversationId);
 
         // 1. 组装 ToolCallback 列表
-        List<ToolCallback> allTools = new ArrayList<>();
-        allTools.add(ragRetrievalCallback);
+        List<ToolCallback> allTools = new ArrayList<>(builtinTools);
         ToolCallback[] mcpTools = mcpToolRegistry.lookup(request.getToolNames());
         if (mcpTools.length > 0) {
             allTools.addAll(List.of(mcpTools));
@@ -126,6 +137,16 @@ public class RagChatService {
             }
         }
         return Flux.empty();
+    }
+
+    /** 确保 MySQL 里存在这个会话，没有则创建。 */
+    private void ensureConversationExists(String conversationId) {
+        if (!conversationRepo.existsByConversationId(conversationId)) {
+            ConversationEntity entity = new ConversationEntity();
+            entity.setConversationId(conversationId);
+            entity.setTitle("New Conversation");
+            conversationRepo.saveAndFlush(entity);
+        }
     }
 
     /** 首轮对话完成后，用第一条用户消息截取标题。 */

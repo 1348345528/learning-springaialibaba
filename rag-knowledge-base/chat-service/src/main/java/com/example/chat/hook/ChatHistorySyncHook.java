@@ -20,7 +20,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -64,6 +66,7 @@ import java.util.Optional;
  * <p>
  * 替代了之前手写的 {@code AgentStateManager} + {@code MultiLevelChatMemory}。
  */
+@Component
 @HookPositions({HookPosition.BEFORE_AGENT, HookPosition.AFTER_AGENT})
 public class ChatHistorySyncHook extends MessagesAgentHook {
 
@@ -143,68 +146,133 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
     /**
      * 把 State Graph 中的新消息同步到 MySQL。
      * <p>
-     * <b>不使用索引计数，改用内容匹配定位"已同步到哪了"。</b>
-     * 这样 SummarizationHook 压缩 State Graph 不会影响 MySQL ——
-     * MySQL 始终保持完整历史，用户可追溯所有对话。
-     * <p>
-     * 逻辑：从 State Graph 尾部往前找，对比 MySQL 尾部，
-     * 找到"最后一条两边都有的消息"，其后就是需要新增的。
+     * 去重策略：先用头部匹配找公共前缀（适用于正常追加场景），
+     * 失败时回退到尾部匹配（适用于 SummarizationHook 压缩场景）。
      */
     private void syncToMysql(String threadId, List<Message> messages) {
+        log.debug("syncToMysql start, thread={}, stateGraphMessages={}", threadId, messages.size());
         if (messages.isEmpty()) return;
 
-        // 确保 MySQL 里有这个会话
         ConversationEntity conversation = conversationRepo.findByConversationId(threadId)
                 .orElseGet(() -> {
+                    log.info("syncToMysql: creating new conversation, thread={}", threadId);
                     ConversationEntity entity = new ConversationEntity();
                     entity.setConversationId(threadId);
                     entity.setTitle("New Conversation");
                     return conversationRepo.save(entity);
                 });
 
-        // 去重：从尾部对比 State Graph 和 MySQL，找到"分叉点"
         int firstNewIndex = findFirstNewIndex(conversation.getId(), messages);
 
         if (firstNewIndex >= messages.size()) {
-            return; // 全部已同步
+            log.debug("syncToMysql: all synced, thread={}", threadId);
+            return;
         }
 
-        // 从分叉点开始写入新消息到 MySQL
         int saved = 0;
+        int skipped = 0;
         for (int i = firstNewIndex; i < messages.size(); i++) {
             Message msg = messages.get(i);
+            String content = buildMessageContent(msg);
+            if (content == null || content.isBlank()) {
+                skipped++;
+                continue;
+            }
             ChatMessageEntity entity = new ChatMessageEntity();
             entity.setConversation(conversation);
             entity.setRole(toRoleString(msg));
-            entity.setContent(msg.getText());
+            entity.setContent(content);
             messageRepo.save(entity);
             saved++;
         }
 
-        // 更新会话的 updatedAt
         conversationRepo.save(conversation);
 
-        if (saved > 0) {
-            log.debug("同步 {} 条新消息到 MySQL, thread={} (sg={}, from={})",
-                    saved, threadId, messages.size(), firstNewIndex);
+        log.info("syncToMysql done, thread={}, saved={}, skipped={}, firstNew={}/{}",
+                threadId, saved, skipped, firstNewIndex, messages.size());
+    }
+
+    /** 从 Spring AI Message 提取可存储的文本内容（处理工具调用消息） */
+    private static String buildMessageContent(Message msg) {
+        if (msg instanceof AssistantMessage assistantMsg) {
+            StringBuilder sb = new StringBuilder();
+            String text = assistantMsg.getText();
+            if (text != null && !text.isBlank()) {
+                sb.append(text);
+            }
+            var toolCalls = assistantMsg.getToolCalls();
+            if (toolCalls != null && !toolCalls.isEmpty()) {
+                if (!sb.isEmpty()) sb.append("\n");
+                for (var tc : toolCalls) {
+                    sb.append("[调用工具: ").append(tc.name())
+                            .append("(").append(tc.arguments()).append(")]");
+                }
+            }
+            return sb.isEmpty() ? null : sb.toString();
         }
+        if (msg instanceof ToolResponseMessage toolMsg) {
+            var responses = toolMsg.getResponses();
+            if (responses != null && !responses.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                for (var r : responses) {
+                    if (!sb.isEmpty()) sb.append("\n");
+                    sb.append("[工具返回: ").append(r.name()).append("] ").append(r.responseData());
+                }
+                return sb.toString();
+            }
+            return null;
+        }
+        String text = msg.getText();
+        return (text != null && !text.isBlank()) ? text : null;
     }
 
     /**
-     * 从 State Graph 尾部往前，对比 MySQL 尾部，找到第一条"MySQL 还没有"的消息位置。
+     * 找到 State Graph 中第一条"MySQL 还没有"的消息索引。
      * <p>
-     * 同时处理 {@code recovered} 标记（Redis 过期恢复场景）。
+     * 策略：头部匹配（正常追加）→ 失败则尾部匹配（SummarizationHook 压缩）→ 都不行则全量同步。
      */
     private int findFirstNewIndex(Long conversationId, List<Message> sgMessages) {
-        // MySQL 中已有的消息
         List<ChatMessageEntity> mysqlMessages = messageRepo
                 .findByConversationIdOrderByCreatedAtAsc(conversationId);
 
         if (mysqlMessages.isEmpty()) {
-            return 0; // MySQL 空的，全部同步
+            return 0;
         }
 
-        // 从尾部往前对比，找"最后一条匹配的消息"
+        // 1. 头部匹配：找 SG 和 MySQL 的最长公共前缀
+        int headMatch = countHeadMatches(sgMessages, mysqlMessages);
+
+        // 2. 头部匹配失败时回退到尾部匹配
+        int tailMatch = (headMatch == 0) ? countTailMatches(sgMessages, mysqlMessages) : 0;
+
+        int matchCount = Math.max(headMatch, tailMatch);
+
+        if (matchCount == 0) {
+            log.warn("Cannot determine sync point for conversation={}, syncing all {} messages",
+                    conversationId, sgMessages.size());
+            return 0;
+        }
+
+        int firstNew = sgMessages.size() - matchCount;
+        return Math.max(0, firstNew);
+    }
+
+    /** 从头部逐条对比，找 SG 和 MySQL 的最长公共前缀长度 */
+    private static int countHeadMatches(List<Message> sgMessages, List<ChatMessageEntity> mysqlMessages) {
+        int maxMatch = Math.min(sgMessages.size(), mysqlMessages.size());
+        int match = 0;
+        for (int i = 0; i < maxMatch; i++) {
+            if (messagesMatch(sgMessages.get(i), mysqlMessages.get(i))) {
+                match++;
+            } else {
+                break;
+            }
+        }
+        return match;
+    }
+
+    /** 从尾部逐条对比，找 SG 和 MySQL 的最长公共后缀长度 */
+    private static int countTailMatches(List<Message> sgMessages, List<ChatMessageEntity> mysqlMessages) {
         int sgIdx = sgMessages.size() - 1;
         int mysqlIdx = mysqlMessages.size() - 1;
         int matchCount = 0;
@@ -218,8 +286,6 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
                 sgIdx--;
                 mysqlIdx--;
             } else {
-                // 不匹配，尝试往前多看几条（压缩可能导致 SG 跳过一些消息）
-                // SG 当前这条可能在 MySQL 更前面的位置
                 boolean found = false;
                 for (int lookback = 1; lookback <= 10 && (mysqlIdx - lookback) >= 0; lookback++) {
                     if (messagesMatch(sgMsg, mysqlMessages.get(mysqlIdx - lookback))) {
@@ -231,14 +297,11 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
                     }
                 }
                 if (!found) {
-                    break; // 确实不匹配，这就是分叉点
+                    sgIdx--; // SG 这条是新/被压缩的消息，跳过继续匹配更老的
                 }
             }
         }
-
-        // 分叉点 = SG 中第一条未匹配的消息
-        int firstNew = sgMessages.size() - matchCount;
-        return Math.max(0, firstNew);
+        return matchCount;
     }
 
     /** 判断一条 State Graph Message 和 MySQL ChatMessageEntity 是否代表同一条消息 */
@@ -246,8 +309,7 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
         String sgRole = toRoleString(sgMsg);
         String mysqlRole = mysqlMsg.getRole();
         if (!sgRole.equals(mysqlRole)) return false;
-        // 内容对比：SG 的 getText() vs MySQL 的 content
-        String sgText = sgMsg.getText();
+        String sgText = buildMessageContent(sgMsg);
         String mysqlText = mysqlMsg.getContent();
         return sgText != null && sgText.equals(mysqlText);
     }
