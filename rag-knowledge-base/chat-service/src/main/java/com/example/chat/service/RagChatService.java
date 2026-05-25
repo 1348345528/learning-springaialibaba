@@ -8,8 +8,9 @@ import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.example.chat.dto.ChatRequest;
-import com.example.chat.model.ChatMemoryMessage;
-import com.example.chat.repository.MysqlChatMemoryRepository;
+import com.example.chat.hook.ChatHistorySyncHook;
+import com.example.chat.repository.jpa.ConversationJpaRepository;
+import com.alibaba.cloud.ai.graph.agent.hook.summarization.SummarizationHook;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -39,33 +40,30 @@ public class RagChatService {
     private final RedisSaver redisSaver;
     private final ToolCallback ragRetrievalCallback;
     private final McpToolRegistryService mcpToolRegistry;
-    private final MultiLevelChatMemory chatMemory;
-    private final MysqlChatMemoryRepository mysqlRepository;
-    private final AgentStateManager agentStateManager;
+    private final ChatHistorySyncHook chatHistorySyncHook;
+    private final SummarizationHook summarizationHook;
+    private final ConversationJpaRepository conversationRepo;
 
     public RagChatService(ChatModel chatModel,
                           RedisSaver redisSaver,
                           ToolCallback ragRetrievalCallback,
                           McpToolRegistryService mcpToolRegistry,
-                          MultiLevelChatMemory chatMemory,
-                          MysqlChatMemoryRepository mysqlRepository,
-                          AgentStateManager agentStateManager) {
+                          ChatHistorySyncHook chatHistorySyncHook,
+                          SummarizationHook summarizationHook,
+                          ConversationJpaRepository conversationRepo) {
         this.chatModel = chatModel;
         this.redisSaver = redisSaver;
         this.ragRetrievalCallback = ragRetrievalCallback;
         this.mcpToolRegistry = mcpToolRegistry;
-        this.chatMemory = chatMemory;
-        this.mysqlRepository = mysqlRepository;
-        this.agentStateManager = agentStateManager;
+        this.chatHistorySyncHook = chatHistorySyncHook;
+        this.summarizationHook = summarizationHook;
+        this.conversationRepo = conversationRepo;
     }
 
     public Flux<ServerSentEvent<String>> chatStream(ChatRequest request) {
         String conversationId = request.getConversationId();
 
-        // 1. 保存用户消息
-        chatMemory.add(conversationId, ChatMemoryMessage.user(request.getMessage()));
-
-        // 2. 组装 ToolCallback 列表
+        // 1. 组装 ToolCallback 列表
         List<ToolCallback> allTools = new ArrayList<>();
         allTools.add(ragRetrievalCallback);
         ToolCallback[] mcpTools = mcpToolRegistry.lookup(request.getToolNames());
@@ -73,35 +71,29 @@ public class RagChatService {
             allTools.addAll(List.of(mcpTools));
         }
 
-        // 3. 构建配置
+        // 2. 构建配置
         RunnableConfig config = RunnableConfig.builder()
                 .threadId(conversationId)
                 .build();
 
-        // 4. 过期检测：Redis TTL 标记不存在 → 从 MySQL 拼历史上下文
-        String userMessage = request.getMessage();
-        if (!agentStateManager.isAlive(conversationId)) {
-            String context = agentStateManager.buildContextPrefix(conversationId);
-            if (context != null) {
-                userMessage = context + userMessage;
-            }
-        }
-
-        // 5. 构建 ReactAgent（MCP 工具动态变化，每次请求构建）
+        // 3. 构建 ReactAgent，注入 Hook
+        //    - ChatHistorySyncHook: beforeAgent 恢复历史 / afterAgent 同步 MySQL + 续 TTL
+        //    - SummarizationHook: beforeModel 自动摘要压缩超长上下文
         ReactAgent agent = ReactAgent.builder()
                 .name("rag_agent")
                 .model(chatModel)
                 .instruction(AGENT_INSTRUCTION)
+                .hooks(chatHistorySyncHook, summarizationHook)
                 .tools(allTools.toArray(new ToolCallback[0]))
                 .saver(redisSaver)
                 .build();
 
-        // 6. 流式执行
+        // 4. 流式执行
         StringBuilder fullContent = new StringBuilder();
 
         Flux<NodeOutput> streamFlux;
         try {
-            streamFlux = agent.stream(userMessage, config);
+            streamFlux = agent.stream(request.getMessage(), config);
         } catch (GraphRunnerException e) {
             log.error("Failed to start agent stream", e);
             return Flux.error(e);
@@ -115,21 +107,8 @@ public class RagChatService {
                 .map(token -> ServerSentEvent.builder(token).build())
                 .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").build())
                         .doOnComplete(() -> {
-                            // 7. 保存 AI 回复 + 续期 TTL
-                            String response = fullContent.toString();
-                            if (!response.isEmpty()) {
-                                chatMemory.add(conversationId, ChatMemoryMessage.assistant(response));
-                            }
-                            agentStateManager.markAlive(conversationId);
-
-                            long msgCount = chatMemory.getMessageCount(conversationId);
-                            if (msgCount <= 2) {
-                                String title = request.getMessage();
-                                if (title.length() > 20) {
-                                    title = title.substring(0, 20) + "...";
-                                }
-                                mysqlRepository.updateConversationTitle(conversationId, title);
-                            }
+                            // 5. 自动生成对话标题（首轮完成后）
+                            autoTitle(conversationId, request.getMessage());
                         }));
     }
 
@@ -147,5 +126,24 @@ public class RagChatService {
             }
         }
         return Flux.empty();
+    }
+
+    /** 首轮对话完成后，用第一条用户消息截取标题。 */
+    private void autoTitle(String conversationId, String firstMessage) {
+        try {
+            conversationRepo.findByConversationId(conversationId).ifPresent(conv -> {
+                // Only set title for fresh conversations (title still at default)
+                if ("New Conversation".equals(conv.getTitle())) {
+                    String title = firstMessage;
+                    if (title != null && title.length() > 20) {
+                        title = title.substring(0, 20) + "...";
+                    }
+                    conv.setTitle(title);
+                    conversationRepo.save(conv);
+                }
+            });
+        } catch (Exception e) {
+            log.debug("Auto-title failed for {}: {}", conversationId, e.getMessage());
+        }
     }
 }
