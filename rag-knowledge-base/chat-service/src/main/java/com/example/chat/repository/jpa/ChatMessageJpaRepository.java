@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * JPA Repository for ChatMessageEntity.
@@ -26,4 +27,11 @@ public interface ChatMessageJpaRepository extends JpaRepository<ChatMessageEntit
      * Count messages for a conversation.
      */
     long countByConversationId(Long conversationId);
+
+    /**
+     * Find the most recent message of a specific role in a conversation.
+     * Used for dedup in syncToMysql.
+     */
+    Optional<ChatMessageEntity> findFirstByConversationIdAndRoleOrderByCreatedAtDesc(
+            Long conversationId, String role);
 }

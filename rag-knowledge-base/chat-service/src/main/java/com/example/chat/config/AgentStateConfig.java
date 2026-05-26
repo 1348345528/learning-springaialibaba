@@ -20,8 +20,8 @@ import java.time.Duration;
 @Configuration
 public class AgentStateConfig {
 
-    /** Agent session TTL: 12 hours. */
-    public static final Duration STATE_TTL = Duration.ofHours(12);
+    /** Agent session TTL: 24 hours. 每次对话后通过 ChatHistorySyncHook 自动续期。 */
+    public static final Duration STATE_TTL = Duration.ofHours(24);
 
     /** Redis alive marker key prefix. */
     public static final String ALIVE_KEY_PREFIX = "agent:alive:";

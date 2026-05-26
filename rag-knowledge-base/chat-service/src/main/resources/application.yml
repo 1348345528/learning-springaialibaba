@@ -16,8 +16,9 @@ spring:
       api-key: sk-9259cd2c369d4dfaa44ce71fd8b9f67e
       chat:
         options:
-          model: qwen-plus
+          model: deepseek-v4-flash
           temperature: 0.7
+          enableThinking: true
   # Redis Configuration (L1 Cache)
   data:
     redis:
@@ -31,7 +32,7 @@ spring:
           min-idle: 2
   # MySQL Configuration (L2 Persistence)
   datasource:
-    url: jdbc:mysql://localhost:3306/rag_knowledgebase?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://172.24.85.181:3306/rag_knowledgebase?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
     username: root
     password: root
     driver-class-name: com.mysql.cj.jdbc.Driver

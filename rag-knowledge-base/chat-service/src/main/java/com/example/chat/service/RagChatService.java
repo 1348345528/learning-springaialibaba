@@ -1,12 +1,15 @@
 package com.example.chat.service;
 
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.redis.RedisSaver;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.alibaba.cloud.ai.graph.NodeOutput;
+import com.alibaba.cloud.ai.graph.store.stores.RedisStore;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
+import com.alibaba.fastjson2.JSONObject;
 import com.example.chat.dto.ChatRequest;
 import com.example.chat.entity.ConversationEntity;
 import com.example.chat.hook.ChatHistorySyncHook;
@@ -15,6 +18,7 @@ import com.alibaba.cloud.ai.graph.agent.hook.summarization.SummarizationHook;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
@@ -22,6 +26,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -96,6 +101,7 @@ public class RagChatService {
                 .instruction(AGENT_INSTRUCTION)
                 .hooks(chatHistorySyncHook, summarizationHook)
                 .tools(allTools.toArray(new ToolCallback[0]))
+                .chatOptions(DashScopeChatOptions.builder().enableThinking(true).build())
                 .saver(redisSaver)
                 .build();
 
@@ -110,12 +116,18 @@ public class RagChatService {
             return Flux.error(e);
         }
 
-        Flux<String> tokenFlux = streamFlux
-                .flatMap(nodeOutput -> extractToken(nodeOutput))
-                .doOnNext(token -> fullContent.append(token));
+        Flux<ServerSentEvent<String>> eventFlux = streamFlux
+                .flatMap(RagChatService::extractToken)
+                .doOnNext(event -> {
+                    if ("message".equals(event.event())) {
+                        String data = event.data();
+                        if (data != null) {
+                            fullContent.append(data);
+                        }
+                    }
+                });
 
-        return tokenFlux
-                .map(token -> ServerSentEvent.builder(token).build())
+        return eventFlux
                 .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").build())
                         .doOnComplete(() -> {
                             // 5. 自动生成对话标题（首轮完成后）
@@ -123,15 +135,36 @@ public class RagChatService {
                         }));
     }
 
-    /** 从 NodeOutput 中提取模型生成的文本 token。 */
-    private static Flux<String> extractToken(NodeOutput nodeOutput) {
+    /** 从 NodeOutput 中提取模型输出的 token，区分思考内容与回复内容。 */
+    private static Flux<ServerSentEvent<String>> extractToken(NodeOutput nodeOutput) {
         if (nodeOutput instanceof StreamingOutput streamingOutput) {
             if (streamingOutput.getOutputType() == OutputType.AGENT_MODEL_STREAMING) {
                 Object msg = streamingOutput.message();
                 if (msg instanceof AssistantMessage assistantMsg) {
+                    List<ServerSentEvent<String>> events = new ArrayList<>();
+
+                    // 思考链路以 metadata 方式传递，key 为 "reasoningContent"
+                    Map<String, Object> meta = assistantMsg.getMetadata();
+                    if (meta != null && meta.containsKey("reasoningContent")) {
+                        Object reasoning = meta.get("reasoningContent");
+                        if (reasoning != null && !reasoning.toString().isEmpty()) {
+                            log.debug("思考: {}", reasoning);
+                            events.add(ServerSentEvent.builder(reasoning.toString())
+                                    .event("reasoning")
+                                    .build());
+                        }
+                    }
+
+                    // 模型回复内容
                     String text = assistantMsg.getText();
                     if (text != null && !text.isEmpty()) {
-                        return Flux.just(text);
+                        events.add(ServerSentEvent.builder(text)
+                                .event("message")
+                                .build());
+                    }
+
+                    if (!events.isEmpty()) {
+                        return Flux.fromIterable(events);
                     }
                 }
             }

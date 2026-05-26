@@ -55,14 +55,9 @@ import java.util.Optional;
  * <p>
  * <b>去重策略：</b>
  * <p>
- * 不用计数器，而是区分两种场景：
- * <ol>
- *   <li><b>正常流程</b>（Redis 存活）— State Graph 包含完整历史。
- *       MySQL 里有 N 条，State Graph 有 N+M 条 → 只同步尾部 M 条新消息。</li>
- *   <li><b>恢复流程</b>（Redis 过期）— State Graph 只有从 MySQL 恢复的最近 20 条 + 本轮新增。
- *       beforeAgent 把恢复条数记在 Redis 里，afterAgent 从那个位置往后同步，
- *       不会把恢复的 20 条重新写入 MySQL。</li>
- * </ol>
+ * 只存储用户和模型的对话（user + assistant），不存储工具调用和工具返回。
+ * afterAgent 从消息列表尾部找最后一条 UserMessage 和 AssistantMessage，
+ * 与 MySQL 中最近一条同 role 消息比对 content 去重后写入。
  * <p>
  * 替代了之前手写的 {@code AgentStateManager} + {@code MultiLevelChatMemory}。
  */
@@ -134,7 +129,7 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
         // 1. 把本轮新增的消息写入 MySQL
         syncToMysql(threadId, previousMessages);
 
-        // 2. 续期 Redis checkpoint 的 TTL（12h）
+        // 2. 续期 Redis checkpoint 的 TTL（24h，每次对话后自动续期）
         renewTtl(threadId);
 
         // 3. 不修改消息，原样返回
@@ -144,15 +139,33 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
     // ── MySQL 同步逻辑 ──────────────────────────────────────────────
 
     /**
-     * 把 State Graph 中的新消息同步到 MySQL。
+     * 把本轮对话的用户消息和模型回复同步到 MySQL。
      * <p>
-     * 去重策略：先用头部匹配找公共前缀（适用于正常追加场景），
-     * 失败时回退到尾部匹配（适用于 SummarizationHook 压缩场景）。
+     * 策略：从 State Graph 消息列表尾部找最后一条 UserMessage 和最后一条 AssistantMessage，
+     * 与 MySQL 中最近一条同 role 消息比对去重后写入。不存储工具调用和工具返回。
      */
     private void syncToMysql(String threadId, List<Message> messages) {
-        log.debug("syncToMysql start, thread={}, stateGraphMessages={}", threadId, messages.size());
         if (messages.isEmpty()) return;
 
+        // 1. 从尾部找最后一条 UserMessage
+        Message lastUser = null;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i) instanceof UserMessage) {
+                lastUser = messages.get(i);
+                break;
+            }
+        }
+
+        // 2. 从尾部找最后一条 AssistantMessage
+        Message lastAssistant = null;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i) instanceof AssistantMessage) {
+                lastAssistant = messages.get(i);
+                break;
+            }
+        }
+
+        // 3. 获取或创建 Conversation
         ConversationEntity conversation = conversationRepo.findByConversationId(threadId)
                 .orElseGet(() -> {
                     log.info("syncToMysql: creating new conversation, thread={}", threadId);
@@ -162,34 +175,49 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
                     return conversationRepo.save(entity);
                 });
 
-        int firstNewIndex = findFirstNewIndex(conversation.getId(), messages);
-
-        if (firstNewIndex >= messages.size()) {
-            log.debug("syncToMysql: all synced, thread={}", threadId);
-            return;
-        }
-
+        Long convId = conversation.getId();
         int saved = 0;
-        int skipped = 0;
-        for (int i = firstNewIndex; i < messages.size(); i++) {
-            Message msg = messages.get(i);
-            String content = buildMessageContent(msg);
-            if (content == null || content.isBlank()) {
-                skipped++;
-                continue;
+
+        // 4. 写入 user 消息（内容去重）
+        if (lastUser != null) {
+            String content = buildMessageContent(lastUser);
+            if (content != null && !content.isBlank() && !isDuplicate(convId, "user", content)) {
+                saveMessage(conversation, "user", content);
+                saved++;
             }
-            ChatMessageEntity entity = new ChatMessageEntity();
-            entity.setConversation(conversation);
-            entity.setRole(toRoleString(msg));
-            entity.setContent(content);
-            messageRepo.save(entity);
-            saved++;
         }
 
-        conversationRepo.save(conversation);
+        // 5. 写入 assistant 消息（内容去重）
+        if (lastAssistant != null) {
+            String content = buildMessageContent(lastAssistant);
+            if (content != null && !content.isBlank() && !isDuplicate(convId, "assistant", content)) {
+                saveMessage(conversation, "assistant", content);
+                saved++;
+            }
+        }
 
-        log.info("syncToMysql done, thread={}, saved={}, skipped={}, firstNew={}/{}",
-                threadId, saved, skipped, firstNewIndex, messages.size());
+        if (saved > 0) {
+            conversationRepo.save(conversation);
+        }
+
+        log.debug("syncToMysql done, thread={}, saved={}", threadId, saved);
+    }
+
+    /** 检查 MySQL 中该会话最近一条同 role 消息是否与 content 相同 */
+    private boolean isDuplicate(Long conversationId, String role, String content) {
+        return messageRepo
+                .findFirstByConversationIdAndRoleOrderByCreatedAtDesc(conversationId, role)
+                .map(last -> content.equals(last.getContent()))
+                .orElse(false);
+    }
+
+    /** 保存一条消息到 MySQL */
+    private void saveMessage(ConversationEntity conversation, String role, String content) {
+        ChatMessageEntity entity = new ChatMessageEntity();
+        entity.setConversation(conversation);
+        entity.setRole(role);
+        entity.setContent(content);
+        messageRepo.save(entity);
     }
 
     /** 从 Spring AI Message 提取可存储的文本内容（处理工具调用消息） */
@@ -224,94 +252,6 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
         }
         String text = msg.getText();
         return (text != null && !text.isBlank()) ? text : null;
-    }
-
-    /**
-     * 找到 State Graph 中第一条"MySQL 还没有"的消息索引。
-     * <p>
-     * 策略：头部匹配（正常追加）→ 失败则尾部匹配（SummarizationHook 压缩）→ 都不行则全量同步。
-     */
-    private int findFirstNewIndex(Long conversationId, List<Message> sgMessages) {
-        List<ChatMessageEntity> mysqlMessages = messageRepo
-                .findByConversationIdOrderByCreatedAtAsc(conversationId);
-
-        if (mysqlMessages.isEmpty()) {
-            return 0;
-        }
-
-        // 1. 头部匹配：找 SG 和 MySQL 的最长公共前缀
-        int headMatch = countHeadMatches(sgMessages, mysqlMessages);
-
-        // 2. 头部匹配失败时回退到尾部匹配
-        int tailMatch = (headMatch == 0) ? countTailMatches(sgMessages, mysqlMessages) : 0;
-
-        int matchCount = Math.max(headMatch, tailMatch);
-
-        if (matchCount == 0) {
-            log.warn("Cannot determine sync point for conversation={}, syncing all {} messages",
-                    conversationId, sgMessages.size());
-            return 0;
-        }
-
-        int firstNew = sgMessages.size() - matchCount;
-        return Math.max(0, firstNew);
-    }
-
-    /** 从头部逐条对比，找 SG 和 MySQL 的最长公共前缀长度 */
-    private static int countHeadMatches(List<Message> sgMessages, List<ChatMessageEntity> mysqlMessages) {
-        int maxMatch = Math.min(sgMessages.size(), mysqlMessages.size());
-        int match = 0;
-        for (int i = 0; i < maxMatch; i++) {
-            if (messagesMatch(sgMessages.get(i), mysqlMessages.get(i))) {
-                match++;
-            } else {
-                break;
-            }
-        }
-        return match;
-    }
-
-    /** 从尾部逐条对比，找 SG 和 MySQL 的最长公共后缀长度 */
-    private static int countTailMatches(List<Message> sgMessages, List<ChatMessageEntity> mysqlMessages) {
-        int sgIdx = sgMessages.size() - 1;
-        int mysqlIdx = mysqlMessages.size() - 1;
-        int matchCount = 0;
-
-        while (sgIdx >= 0 && mysqlIdx >= 0) {
-            Message sgMsg = sgMessages.get(sgIdx);
-            ChatMessageEntity mysqlMsg = mysqlMessages.get(mysqlIdx);
-
-            if (messagesMatch(sgMsg, mysqlMsg)) {
-                matchCount++;
-                sgIdx--;
-                mysqlIdx--;
-            } else {
-                boolean found = false;
-                for (int lookback = 1; lookback <= 10 && (mysqlIdx - lookback) >= 0; lookback++) {
-                    if (messagesMatch(sgMsg, mysqlMessages.get(mysqlIdx - lookback))) {
-                        mysqlIdx = mysqlIdx - lookback - 1;
-                        sgIdx--;
-                        matchCount++;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    sgIdx--; // SG 这条是新/被压缩的消息，跳过继续匹配更老的
-                }
-            }
-        }
-        return matchCount;
-    }
-
-    /** 判断一条 State Graph Message 和 MySQL ChatMessageEntity 是否代表同一条消息 */
-    private static boolean messagesMatch(Message sgMsg, ChatMessageEntity mysqlMsg) {
-        String sgRole = toRoleString(sgMsg);
-        String mysqlRole = mysqlMsg.getRole();
-        if (!sgRole.equals(mysqlRole)) return false;
-        String sgText = buildMessageContent(sgMsg);
-        String mysqlText = mysqlMsg.getContent();
-        return sgText != null && sgText.equals(mysqlText);
     }
 
     /** 从 MySQL 加载最近 N 条消息（Redis 过期恢复用） */
