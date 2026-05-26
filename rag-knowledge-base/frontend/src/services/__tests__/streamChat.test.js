@@ -51,92 +51,162 @@ describe('chatApi.streamChat', () => {
     global.XMLHttpRequest = MockXMLHttpRequest;
   });
 
-  it('parses plain-text SSE blocks and emits fallback done with full response', async () => {
+  it('parses single-data SSE block as message', async () => {
     const events = [];
-    const errors = [];
 
     const streamPromise = chatApi.streamChat(
       { message: 'hello' },
       (event) => events.push(event),
-      (error) => errors.push(error)
+      vi.fn()
     );
 
     const xhr = MockXMLHttpRequest.instances[0];
-    xhr.emitProgress('data: Hel');
-    xhr.emitProgress('lo\n\n');
-    xhr.emitProgress('\n');
-    xhr.emitProgress('data: world\n\n');
+    xhr.emitProgress('event:message\ndata:Hello World\n\n');
     xhr.complete(200);
 
-    const result = await streamPromise;
+    await streamPromise;
 
-    expect(errors).toEqual([]);
     expect(events).toEqual([
-      { type: 'chunk', content: 'Hello' },
-      { type: 'chunk', content: 'world' },
-      { type: 'done', fullResponse: 'Helloworld', sources: [], reason: 'end-without-done' },
+      { type: 'message', content: 'Hello World' },
     ]);
-    expect(result).toEqual({ type: 'done', fullResponse: 'Helloworld', sources: [] });
-    expect(xhr.method).toBe('POST');
-    expect(xhr.url).toBe('/api/chat/stream');
-    expect(xhr.headers['Content-Type']).toBe('application/json');
-    expect(xhr.requestBody).toBe(JSON.stringify({ message: 'hello' }));
   });
 
-  it('parses JSON blocks, ignores empty chunks, and respects explicit done', async () => {
+  it('parses reasoning event correctly', async () => {
     const events = [];
 
-    const streamPromise = chatApi.streamChat({ message: 'hi' }, (event) => events.push(event), vi.fn());
+    const streamPromise = chatApi.streamChat(
+      { message: 'hello' },
+      (event) => events.push(event),
+      vi.fn()
+    );
 
     const xhr = MockXMLHttpRequest.instances[0];
-    xhr.emitProgress('data: {"type":"chunk","content":"Hello"}\n\n');
-    xhr.emitProgress('data: {"type":"chunk","content":"   "}\n\n');
-    xhr.emitProgress('event: done\n');
-    xhr.emitProgress('data: {"type":"done","fullResponse":"Hello there","sources":[{"fileName":"doc.txt"}]}\n\n');
+    xhr.emitProgress('event:reasoning\ndata:Let me think...\n\n');
+    xhr.emitProgress('event:message\ndata:The answer is 42\n\n');
     xhr.complete(200);
 
-    const result = await streamPromise;
+    await streamPromise;
 
     expect(events).toEqual([
-      { type: 'chunk', content: 'Hello' },
-      { type: 'done', fullResponse: 'Hello there', sources: [{ fileName: 'doc.txt' }] },
+      { type: 'reasoning', content: 'Let me think...' },
+      { type: 'message', content: 'The answer is 42' },
     ]);
-    expect(result).toEqual({ type: 'done', fullResponse: 'Hello there', sources: [{ fileName: 'doc.txt' }] });
   });
 
-  it('supports [DONE] sentinel after JSON and plain-text chunks', async () => {
+  it('joins multiple data lines within same block with newline', async () => {
     const events = [];
 
-    const streamPromise = chatApi.streamChat({ message: 'hi' }, (event) => events.push(event), vi.fn());
+    const streamPromise = chatApi.streamChat(
+      { message: 'hello' },
+      (event) => events.push(event),
+      vi.fn()
+    );
 
     const xhr = MockXMLHttpRequest.instances[0];
-    xhr.emitProgress('data: {"type":"chunk","content":"Hi"}\n\n');
-    xhr.emitProgress('data: there\n\n');
-    xhr.emitProgress('data: [DONE]\n\n');
+    // 模拟多段落文本（第三条 data: 是空行，表示段落间距）
+    xhr.emitProgress('event:message\ndata:段落一。\ndata:\ndata:段落二。\n\n');
     xhr.complete(200);
 
-    const result = await streamPromise;
+    await streamPromise;
 
     expect(events).toEqual([
-      { type: 'chunk', content: 'Hi' },
-      { type: 'chunk', content: 'there' },
-      { type: 'done', fullResponse: 'Hithere', sources: [] },
+      { type: 'message', content: '段落一。\n\n段落二。' },
     ]);
-    expect(result).toEqual({ type: 'done', fullResponse: 'Hithere', sources: [] });
   });
 
-  it('emits error exactly once when the server sends an error event', async () => {
+  it('handles [DONE] sentinel', async () => {
     const events = [];
+
+    const streamPromise = chatApi.streamChat(
+      { message: 'hi' },
+      (event) => events.push(event),
+      vi.fn()
+    );
+
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.emitProgress('event:message\ndata:Hi\n\n');
+    xhr.emitProgress('data:[DONE]\n\n');
+    xhr.complete(200);
+
+    await streamPromise;
+
+    expect(events).toEqual([
+      { type: 'message', content: 'Hi' },
+      { type: 'done' },
+    ]);
+  });
+
+  it('treats data without event as message type', async () => {
+    const events = [];
+
+    const streamPromise = chatApi.streamChat(
+      { message: 'hi' },
+      (event) => events.push(event),
+      vi.fn()
+    );
+
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.emitProgress('data:plain text\n\n');
+    xhr.complete(200);
+
+    await streamPromise;
+
+    expect(events).toEqual([
+      { type: 'message', content: 'plain text' },
+    ]);
+  });
+
+  it('handles block split across progress chunks', async () => {
+    const events = [];
+
+    const streamPromise = chatApi.streamChat(
+      { message: 'hi' },
+      (event) => events.push(event),
+      vi.fn()
+    );
+
+    const xhr = MockXMLHttpRequest.instances[0];
+    // 一个 SSE block 跨两个 progress 到达
+    xhr.emitProgress('event:mess');
+    xhr.emitProgress('age\ndata:partial chunk\n\n');
+    xhr.complete(200);
+
+    await streamPromise;
+
+    expect(events).toEqual([
+      { type: 'message', content: 'partial chunk' },
+    ]);
+  });
+
+  it('strips optional space after data: prefix', async () => {
+    const events = [];
+
+    const streamPromise = chatApi.streamChat(
+      { message: 'hi' },
+      (event) => events.push(event),
+      vi.fn()
+    );
+
+    const xhr = MockXMLHttpRequest.instances[0];
+    // SSE 规范允许 data: 后面有一个空格
+    xhr.emitProgress('event:message\ndata: with space\n\n');
+    xhr.complete(200);
+
+    await streamPromise;
+
+    expect(events).toEqual([
+      { type: 'message', content: 'with space' },
+    ]);
+  });
+
+  it('reports errors via onError', () => {
     const onError = vi.fn();
 
-    const streamPromise = chatApi.streamChat({ message: 'hi' }, (event) => events.push(event), onError);
+    chatApi.streamChat({ message: 'hi' }, vi.fn(), onError);
 
     const xhr = MockXMLHttpRequest.instances[0];
-    xhr.emitProgress('data: {"type":"error","message":"boom"}\n\n');
+    xhr.fail();
 
-    await expect(streamPromise).rejects.toThrow('boom');
-    expect(events).toEqual([{ type: 'error', message: 'boom' }]);
-    expect(onError).toHaveBeenCalledTimes(1);
-    expect(onError.mock.calls[0][0].message).toBe('boom');
+    expect(onError).toHaveBeenCalledWith('网络连接失败');
   });
 });

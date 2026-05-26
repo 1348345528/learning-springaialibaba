@@ -86,28 +86,54 @@ export const chatApi = {
     }
 
     let lastIndex = 0;
+    let lineBuffer = ''; // 跨 progress 的不完整块缓冲
+
+    const processBlock = (block) => {
+      const lines = block.split('\n');
+      let eventType = null;
+      const dataLines = [];
+
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          eventType = line.substring(6).trim();
+        } else if (line.startsWith('data:')) {
+          // SSE 规范：data: 后面可有一个可选空格，去掉那个空格即可
+          const value = line.substring(5);
+          dataLines.push(value.startsWith(' ') ? value.substring(1) : value);
+        }
+      }
+
+      // 同一个 event 块内的多个 data: 行用 \n 拼接
+      const data = dataLines.join('\n');
+
+      if (data === '[DONE]') {
+        onData({ type: 'done' });
+        return;
+      }
+
+      if (!data) return;
+
+      if (eventType === 'reasoning') {
+        onData({ type: 'reasoning', content: data });
+      } else {
+        // event:message 或无 event 时默认当作消息内容
+        onData({ type: 'message', content: data });
+      }
+    };
+
     xhr.onprogress = () => {
       const newData = xhr.responseText.substring(lastIndex);
       lastIndex = xhr.responseText.length;
 
-      const lines = newData.split('\n').filter(Boolean);
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          const data = line.substring(5).trim();
-          if (data === '[DONE]') {
-            onData({ type: 'done' });
-          } else if (data.startsWith('{')) {
-            // JSON 对象：尝试解析提取 content/response
-            try {
-              const parsed = JSON.parse(data);
-              onData({ type: 'chunk', content: parsed.content || parsed.response || data });
-            } catch {
-              onData({ type: 'chunk', content: data });
-            }
-          } else {
-            // 纯文本（含纯数字如 "18"），直接使用
-            onData({ type: 'chunk', content: data });
-          }
+      lineBuffer += newData;
+      // SSE 事件块之间以 \n\n 分隔
+      const parts = lineBuffer.split('\n\n');
+      // 最后一部分可能不完整，留到下次处理
+      lineBuffer = parts.pop() || '';
+
+      for (const block of parts) {
+        if (block.trim()) {
+          processBlock(block);
         }
       }
     };

@@ -47,8 +47,8 @@ public class AgentStateConfig {
     public SummarizationHook summarizationHook(ChatModel chatModel) {
         return SummarizationHook.builder()
                 .model(chatModel)
-                .maxTokensBeforeSummary(4000)
-                .messagesToKeep(10)
+                .maxTokensBeforeSummary(1000)
+                .messagesToKeep(5)
                 .keepFirstUserMessage(true)
                 .build();
     }

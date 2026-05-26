@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Button, message, Tooltip } from 'antd';
+import { Button, message, Tooltip, Collapse } from 'antd';
 import { marked } from 'marked';
 import {
   CopyOutlined,
   CheckOutlined,
   ReloadOutlined,
+  BulbOutlined,
 } from '@ant-design/icons';
 
 // 配置 marked 选项
@@ -34,22 +35,17 @@ const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
 
   // 渲染内容
   const renderContent = (content) => {
-    if (!content) return null;
-
-    // AI 消息
+    // AI 消息：始终渲染 Markdown
     if (!isUser) {
-      // 流式传输中：显示纯文本（保持格式但不解析 Markdown）
-      if (isStreaming) {
-        return (
-          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 14, lineHeight: '22px' }}>
-            {content}
-            <span style={{ display: 'inline-block', animation: 'blink 1s infinite' }}>|</span>
-          </div>
-        );
-      }
+      // 流式时在 Markdown 末尾追加闪烁光标
+      const cursor = isStreaming
+        ? '<span style="display:inline-block;animation:blink 1s infinite">|</span>'
+        : '';
+      const htmlContent = content
+        ? marked.parse(content) + cursor
+        : cursor;
 
-      // 流式结束后：渲染 Markdown
-      const htmlContent = marked.parse(content);
+      if (!htmlContent) return null;
 
       return (
         <div
@@ -119,6 +115,38 @@ const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
           border: isError ? '1px solid #ff4d4f' : isUser ? '1px solid #91caff' : '1px solid #d9d9d9',
         }}
       >
+        {/* 思考过程 */}
+        {!isUser && msg.reasoning && (
+          <Collapse
+            size="small"
+            ghost
+            items={[{
+              key: 'reasoning',
+              label: (
+                <span style={{ fontSize: 12, color: '#8c8c8c' }}>
+                  <BulbOutlined style={{ marginRight: 4 }} />
+                  思考过程
+                </span>
+              ),
+              children: (
+                <div style={{
+                  fontSize: 13,
+                  color: '#8c8c8c',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  lineHeight: '20px',
+                  borderLeft: '2px solid #d9d9d9',
+                  paddingLeft: 10,
+                  marginTop: 4,
+                }}>
+                  {msg.reasoning}
+                </div>
+              ),
+            }]}
+            style={{ marginBottom: msg.content ? 8 : 0, background: 'transparent' }}
+          />
+        )}
+
         {renderContent(msg.content)}
 
         {/* 错误状态显示重试按钮 */}

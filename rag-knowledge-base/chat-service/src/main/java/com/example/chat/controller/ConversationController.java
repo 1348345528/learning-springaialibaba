@@ -9,6 +9,7 @@ import com.example.chat.hook.ChatHistorySyncHook;
 import com.example.chat.repository.jpa.ChatMessageJpaRepository;
 import com.example.chat.repository.jpa.ConversationJpaRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.ZoneOffset;
@@ -108,6 +109,7 @@ public class ConversationController {
 
     /** Delete a conversation and all its messages (MySQL + Redis). */
     @DeleteMapping("/{conversationId}")
+    @Transactional
     public ResponseEntity<Void> deleteConversation(@PathVariable String conversationId) {
         conversationRepo.findByConversationId(conversationId).ifPresent(conv -> {
             messageRepo.deleteByConversationId(conv.getId());

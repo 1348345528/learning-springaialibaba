@@ -136,43 +136,36 @@ const ChatQA = () => {
 
     // 累积内容
     let fullContent = '';
+    let fullReasoning = '';
+
+    const updateAssistant = (updates) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMsgId ? { ...msg, ...updates } : msg
+        )
+      );
+    };
 
     try {
       const { promise, abort } = chatApi.streamChat(
         requestWithConversationId,
         (data) => {
-          if (data.type === 'done') {
-            // 流结束
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMsgId
-                  ? { ...msg, content: fullContent, status: 'success' }
-                  : msg
-              )
-            );
-            setStreamingId(null);
-            // 刷新会话列表（标题和时间戳已更新）
-            loadConversations();
-          } else if (data.type === 'chunk') {
-            // 纯文本块
-            fullContent += data.content;
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMsgId
-                  ? { ...msg, content: fullContent }
-                  : msg
-              )
-            );
-          } else if (data.content !== undefined) {
-            // JSON 响应
-            fullContent += data.content;
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMsgId
-                  ? { ...msg, content: fullContent }
-                  : msg
-              )
-            );
+          switch (data.type) {
+            case 'done':
+              updateAssistant({ content: fullContent, reasoning: fullReasoning || undefined, status: 'success' });
+              setStreamingId(null);
+              loadConversations();
+              break;
+            case 'reasoning':
+              fullReasoning += data.content;
+              updateAssistant({ reasoning: fullReasoning });
+              break;
+            case 'message':
+              fullContent += data.content;
+              updateAssistant({ content: fullContent, reasoning: fullReasoning || undefined });
+              break;
+            default:
+              break;
           }
         },
         (errorMsg) => {
@@ -186,26 +179,14 @@ const ChatQA = () => {
       // 处理取消
       if (err.message === 'aborted') {
         if (fullContent) {
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMsgId
-                ? { ...msg, content: fullContent + ' [已停止]', status: 'success' }
-                : msg
-            )
-          );
+          updateAssistant({ content: fullContent + ' [已停止]', reasoning: fullReasoning || undefined, status: 'success' });
         }
         setStreamingId(null);
         return;
       }
 
       // 处理错误
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMsgId
-            ? { ...msg, content: err.message || '抱歉，服务端出错', status: 'error' }
-            : msg
-        )
-      );
+      updateAssistant({ content: err.message || '抱歉，服务端出错', reasoning: undefined, status: 'error' });
       setError(err.message);
       setStreamingId(null);
     } finally {
