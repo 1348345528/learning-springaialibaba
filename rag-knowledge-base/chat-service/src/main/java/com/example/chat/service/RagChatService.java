@@ -134,8 +134,13 @@ public class RagChatService {
                 });
 
         return eventFlux
+                .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").build())
+                        .doOnComplete(() -> {
+                            // 5. 自动生成对话标题（首轮完成后）
+                            autoTitle(conversationId, request.getMessage());
+                        }))
                 .concatWith(Flux.defer(() -> {
-                    // 检查是否有报表生成
+                    // 流完成后检查是否有报表生成
                     ReportInfo reportInfo = reportGenerationTool.pollReport();
                     if (reportInfo != null) {
                         String json = String.format("{\"reportId\":%d,\"reportName\":\"%s\",\"url\":\"%s\"}",
@@ -146,12 +151,7 @@ public class RagChatService {
                         return Flux.just(ServerSentEvent.builder(json).event("report").build());
                     }
                     return Flux.empty();
-                }))
-                .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").build())
-                        .doOnComplete(() -> {
-                            // 5. 自动生成对话标题（首轮完成后）
-                            autoTitle(conversationId, request.getMessage());
-                        }));
+                }));
     }
 
     /** 从 NodeOutput 中提取模型输出的 token，区分思考内容与回复内容。 */
