@@ -36,6 +36,7 @@ const App = () => {
           <Route index element={<Navigate to="/rag/document" replace />} />
           <Route path="rag/document" element={<DocumentUpload />} />
           <Route path="rag/chunk" element={<ChunkManagement />} />
+          <Route path="doc/chunks" element={<Navigate to="/rag/chunk" replace />} />
           <Route path="mcp" element={<McpManagement />} />
           <Route path="chat" element={<ChatQA />} />
           <Route path="sys/user" element={<UserManagement />} />
