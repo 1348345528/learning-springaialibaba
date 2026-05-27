@@ -6,8 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 @Slf4j
@@ -17,11 +16,8 @@ public class ReportGenerationTool
 
     private final ReportService reportService;
 
-    // 存储每个会话最近一次生成的报表信息，供 RagChatService 提取
-    private final Map<String, ReportInfo> pendingReports = new ConcurrentHashMap<>();
-
-    // ThreadLocal 用于在 apply 方法中获取当前会话 ID
-    private static final ThreadLocal<String> currentConversationId = new ThreadLocal<>();
+    // 存储最近一次生成的报表信息，供 RagChatService 提取
+    private final AtomicReference<ReportInfo> latestReport = new AtomicReference<>();
 
     public ReportGenerationTool(ReportService reportService) {
         this.reportService = reportService;
@@ -37,28 +33,21 @@ public class ReportGenerationTool
 
         String url = "/api/reports/" + report.getId() + "/html";
 
-        // 存储报表信息到 pendingReports，供 RagChatService 提取
-        String conversationId = currentConversationId.get();
-        if (conversationId != null) {
-            pendingReports.put(conversationId, new ReportInfo(report.getId(), report.getName(), url));
-        }
+        // 存储报表信息，供 RagChatService 提取
+        ReportInfo reportInfo = new ReportInfo(report.getId(), report.getName(), url);
+        latestReport.set(reportInfo);
+        log.info("Report generated and stored: id={}, name={}", report.getId(), report.getName());
 
         return new Response(report.getId(), report.getName(), url);
     }
 
-    /** 设置当前会话 ID（在调用 agent.stream 之前调用） */
-    public void setCurrentConversationId(String conversationId) {
-        currentConversationId.set(conversationId);
-    }
-
-    /** 清除当前会话 ID */
-    public void clearCurrentConversationId() {
-        currentConversationId.remove();
-    }
-
-    /** 取出会话的报表信息并移除 */
-    public ReportInfo pollReport(String conversationId) {
-        return pendingReports.remove(conversationId);
+    /** 取出最近生成的报表信息并移除 */
+    public ReportInfo pollReport() {
+        ReportInfo info = latestReport.getAndSet(null);
+        if (info != null) {
+            log.info("Polling report: id={}, name={}", info.reportId(), info.reportName());
+        }
+        return info;
     }
 
     public record Request(
