@@ -12,6 +12,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/sys/role")
+@CrossOrigin(origins = "*")
 public class SysRoleController {
 
     private final SysRoleService roleService;

@@ -11,6 +11,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/sys/menu")
+@CrossOrigin(origins = "*")
 public class SysMenuController {
 
     private final SysMenuService menuService;

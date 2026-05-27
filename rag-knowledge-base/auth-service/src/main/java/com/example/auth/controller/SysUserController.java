@@ -12,6 +12,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/sys/user")
+@CrossOrigin(origins = "*")
 public class SysUserController {
 
     private final SysUserService sysUserService;
