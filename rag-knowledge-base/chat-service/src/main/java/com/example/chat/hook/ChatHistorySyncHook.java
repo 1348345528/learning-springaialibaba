@@ -5,6 +5,8 @@ import com.example.chat.entity.ChatMessageEntity;
 import com.example.chat.entity.ConversationEntity;
 import com.example.chat.repository.jpa.ChatMessageJpaRepository;
 import com.example.chat.repository.jpa.ConversationJpaRepository;
+import com.example.chat.service.ReportGenerationTool;
+import com.example.chat.service.ReportGenerationTool.ReportInfo;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.hook.HookPosition;
 import com.alibaba.cloud.ai.graph.agent.hook.HookPositions;
@@ -76,15 +78,18 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
     private final ChatMessageJpaRepository messageRepo;
     private final StringRedisTemplate redis;
     private final RedissonClient redissonClient;
+    private final ReportGenerationTool reportGenerationTool;
 
     public ChatHistorySyncHook(ConversationJpaRepository conversationRepo,
                                ChatMessageJpaRepository messageRepo,
                                StringRedisTemplate redis,
-                               RedissonClient redissonClient) {
+                               RedissonClient redissonClient,
+                               ReportGenerationTool reportGenerationTool) {
         this.conversationRepo = conversationRepo;
         this.messageRepo = messageRepo;
         this.redis = redis;
         this.redissonClient = redissonClient;
+        this.reportGenerationTool = reportGenerationTool;
     }
 
     // ── beforeAgent：Redis 过期时从 MySQL 恢复历史 ──────────────────
@@ -187,11 +192,17 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
             }
         }
 
-        // 5. 写入 assistant 消息（内容去重）
+        // 5. 写入 assistant 消息（内容去重），附带报表信息
         if (lastAssistant != null) {
             String content = buildMessageContent(lastAssistant);
             if (content != null && !content.isBlank() && !isDuplicate(convId, "assistant", content)) {
-                saveMessage(conversation, "assistant", content);
+                ReportInfo reportInfo = reportGenerationTool.peekReport();
+                if (reportInfo != null) {
+                    saveMessageWithReport(conversation, "assistant", content,
+                            reportInfo.url(), reportInfo.reportName());
+                } else {
+                    saveMessage(conversation, "assistant", content);
+                }
                 saved++;
             }
         }
@@ -218,6 +229,19 @@ public class ChatHistorySyncHook extends MessagesAgentHook {
         entity.setRole(role);
         entity.setContent(content);
         messageRepo.save(entity);
+    }
+
+    /** 保存一条带报表信息的消息到 MySQL */
+    private void saveMessageWithReport(ConversationEntity conversation, String role, String content,
+                                       String reportUrl, String reportName) {
+        ChatMessageEntity entity = new ChatMessageEntity();
+        entity.setConversation(conversation);
+        entity.setRole(role);
+        entity.setContent(content);
+        entity.setReportUrl(reportUrl);
+        entity.setReportName(reportName);
+        messageRepo.save(entity);
+        log.info("Saved message with report: url={}, name={}", reportUrl, reportName);
     }
 
     /** 从 Spring AI Message 提取可存储的文本内容（处理工具调用消息） */

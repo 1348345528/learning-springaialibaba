@@ -63,6 +63,11 @@ const ChatQA = () => {
         content: msg.content,
         timestamp: msg.timestamp || Date.now(),
         status: 'success',
+        report: msg.reportUrl ? {
+          reportId: null,
+          reportName: msg.reportName,
+          url: msg.reportUrl,
+        } : undefined,
       }));
       setMessages(mapped);
     } catch (error) {

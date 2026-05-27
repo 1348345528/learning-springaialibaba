@@ -50,6 +50,11 @@ public class ReportGenerationTool
         return info;
     }
 
+    /** 查看最近生成的报表信息但不移除（供 afterAgent hook 使用） */
+    public ReportInfo peekReport() {
+        return latestReport.get();
+    }
+
     public record Request(
             @JsonProperty(required = true) String insuranceType,
             @JsonProperty(required = true) String startDate,

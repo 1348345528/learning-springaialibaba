@@ -88,7 +88,9 @@ public class ConversationController {
                         entity.getContent(),
                         entity.getCreatedAt() != null
                                 ? entity.getCreatedAt().toInstant(ZoneOffset.UTC).toEpochMilli()
-                                : System.currentTimeMillis()))
+                                : System.currentTimeMillis(),
+                        entity.getReportUrl(),
+                        entity.getReportName()))
                 .toList();
         return ResponseEntity.ok(dtos);
     }

@@ -28,6 +28,12 @@ public class ChatMessageEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @Column(name = "report_url", length = 255)
+    private String reportUrl;
+
+    @Column(name = "report_name", length = 255)
+    private String reportName;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -67,6 +73,22 @@ public class ChatMessageEntity {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getReportUrl() {
+        return reportUrl;
+    }
+
+    public void setReportUrl(String reportUrl) {
+        this.reportUrl = reportUrl;
+    }
+
+    public String getReportName() {
+        return reportName;
+    }
+
+    public void setReportName(String reportName) {
+        this.reportName = reportName;
     }
 
     public LocalDateTime getCreatedAt() {

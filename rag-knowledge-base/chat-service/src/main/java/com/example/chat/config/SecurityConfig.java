@@ -19,6 +19,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable())
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.disable())  // 允许报表在 iframe 中展示
+                )
                 .authorizeHttpRequests(auth -> auth
                         .anyRequest().permitAll()  // 临时允许所有请求，用于测试 DeepSeek 集成
                 )

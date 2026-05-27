@@ -1,4 +1,5 @@
 package com.example.chat.dto;
 
-public record MessageDto(String role, String content, Long timestamp) {
+public record MessageDto(String role, String content, Long timestamp,
+                         String reportUrl, String reportName) {
 }

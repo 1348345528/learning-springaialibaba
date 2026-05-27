@@ -21,6 +21,8 @@ marked.use({});
 const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
   const [copied, setCopied] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [linkReportUrl, setLinkReportUrl] = useState(null);
+  const [linkReportName, setLinkReportName] = useState('');
 
   const isUser = msg.role === 'user';
   const isError = msg.status === 'error';
@@ -33,6 +35,20 @@ const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  // 拦截报表链接点击，弹框展示而非跳转
+  const handleContentClick = (e) => {
+    const target = e.target.closest('a');
+    if (!target) return;
+    const href = target.getAttribute('href');
+    if (!href) return;
+    const match = href.match(/\/api\/reports\/(\d+)\/html/);
+    if (match) {
+      e.preventDefault();
+      setLinkReportUrl(href);
+      setLinkReportName(target.textContent || `报表 #${match[1]}`);
+    }
   };
 
   // 渲染内容
@@ -54,6 +70,7 @@ const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
           className="markdown-body"
           style={{ fontSize: 14, lineHeight: '22px' }}
           dangerouslySetInnerHTML={{ __html: htmlContent }}
+          onClick={handleContentClick}
         />
       );
     }
@@ -192,6 +209,33 @@ const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
             </Modal>
           </>
         )}
+
+        {/* 报表链接点击弹框 */}
+        <Modal
+          title={linkReportName}
+          open={!!linkReportUrl}
+          onCancel={() => setLinkReportUrl(null)}
+          width="90%"
+          style={{ top: 20 }}
+          footer={[
+            <Button key="close" onClick={() => setLinkReportUrl(null)}>
+              关闭
+            </Button>,
+            <Button key="open" type="primary" onClick={() => window.open(linkReportUrl, '_blank')}>
+              新标签页打开
+            </Button>,
+          ]}
+        >
+          <iframe
+            src={linkReportUrl}
+            style={{
+              width: '100%',
+              height: 'calc(100vh - 200px)',
+              border: 'none',
+            }}
+            title="报表内容"
+          />
+        </Modal>
 
         {/* 错误状态显示重试按钮 */}
         {isError && (
