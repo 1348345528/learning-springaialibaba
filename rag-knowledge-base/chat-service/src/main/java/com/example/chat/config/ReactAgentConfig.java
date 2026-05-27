@@ -4,6 +4,8 @@ import com.example.chat.service.CalculatorTool;
 import com.example.chat.service.DateTimeTool;
 import com.example.chat.service.DocStatsTool;
 import com.example.chat.service.RagRetrievalTool;
+import com.example.chat.service.ReportGenerationTool;
+import com.example.chat.service.ReportService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
@@ -76,6 +78,21 @@ public class ReactAgentConfig {
                         返回: 文档数量、文档名称列表、分块总数。
                         """)
                 .inputType(DocStatsTool.Request.class)
+                .build();
+    }
+
+    @Bean
+    public ToolCallback reportGenerationCallback(ReportGenerationTool reportGenerationTool) {
+        return FunctionToolCallback
+                .builder("generate_report", reportGenerationTool)
+                .description("""
+                        生成保险报表。当用户要求生成报表、查看报表、统计保险数据时调用。
+                        参数说明：
+                        - insuranceType: 险种，可选值：车险/健康险/寿险/意外险/财产险
+                        - startDate: 起始日期，格式 yyyy-MM-dd
+                        - endDate: 截止日期，格式 yyyy-MM-dd
+                        """)
+                .inputType(ReportGenerationTool.Request.class)
                 .build();
     }
 }

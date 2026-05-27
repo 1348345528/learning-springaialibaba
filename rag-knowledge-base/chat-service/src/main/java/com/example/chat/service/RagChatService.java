@@ -14,6 +14,7 @@ import com.example.chat.dto.ChatRequest;
 import com.example.chat.entity.ConversationEntity;
 import com.example.chat.hook.ChatHistorySyncHook;
 import com.example.chat.repository.jpa.ConversationJpaRepository;
+import com.example.chat.service.ReportGenerationTool.ReportInfo;
 import com.alibaba.cloud.ai.graph.agent.hook.summarization.SummarizationHook;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -56,6 +57,7 @@ public class RagChatService {
     private final ChatHistorySyncHook chatHistorySyncHook;
     private final SummarizationHook summarizationHook;
     private final ConversationJpaRepository conversationRepo;
+    private final ReportGenerationTool reportGenerationTool;
 
     public RagChatService(ChatModel chatModel,
                           RedisSaver redisSaver,
@@ -63,7 +65,8 @@ public class RagChatService {
                           McpToolRegistryService mcpToolRegistry,
                           ChatHistorySyncHook chatHistorySyncHook,
                           SummarizationHook summarizationHook,
-                          ConversationJpaRepository conversationRepo) {
+                          ConversationJpaRepository conversationRepo,
+                          ReportGenerationTool reportGenerationTool) {
         this.chatModel = chatModel;
         this.redisSaver = redisSaver;
         this.builtinTools = builtinTools;
@@ -71,6 +74,7 @@ public class RagChatService {
         this.chatHistorySyncHook = chatHistorySyncHook;
         this.summarizationHook = summarizationHook;
         this.conversationRepo = conversationRepo;
+        this.reportGenerationTool = reportGenerationTool;
     }
 
     public Flux<ServerSentEvent<String>> chatStream(ChatRequest request) {
@@ -108,11 +112,15 @@ public class RagChatService {
         // 4. 流式执行
         StringBuilder fullContent = new StringBuilder();
 
+        // 设置当前会话 ID，供 ReportGenerationTool 使用
+        reportGenerationTool.setCurrentConversationId(conversationId);
+
         Flux<NodeOutput> streamFlux;
         try {
             streamFlux = agent.stream(request.getMessage(), config);
         } catch (GraphRunnerException e) {
             log.error("Failed to start agent stream", e);
+            reportGenerationTool.clearCurrentConversationId();
             return Flux.error(e);
         }
 
@@ -128,8 +136,22 @@ public class RagChatService {
                 });
 
         return eventFlux
+                .concatWith(Flux.defer(() -> {
+                    // 检查是否有报表生成
+                    ReportInfo reportInfo = reportGenerationTool.pollReport(conversationId);
+                    if (reportInfo != null) {
+                        String json = String.format("{\"reportId\":%d,\"reportName\":\"%s\",\"url\":\"%s\"}",
+                                reportInfo.reportId(),
+                                reportInfo.reportName().replace("\"", "\\\""),
+                                reportInfo.url());
+                        return Flux.just(ServerSentEvent.builder(json).event("report").build());
+                    }
+                    return Flux.empty();
+                }))
                 .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").build())
                         .doOnComplete(() -> {
+                            // 清除 ThreadLocal
+                            reportGenerationTool.clearCurrentConversationId();
                             // 5. 自动生成对话标题（首轮完成后）
                             autoTitle(conversationId, request.getMessage());
                         }));

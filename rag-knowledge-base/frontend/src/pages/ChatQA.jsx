@@ -164,6 +164,9 @@ const ChatQA = () => {
               fullContent += data.content;
               updateAssistant({ content: fullContent, reasoning: fullReasoning || undefined });
               break;
+            case 'report':
+              updateAssistant({ report: data.data });
+              break;
             default:
               break;
           }

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Button, message, Tooltip, Collapse } from 'antd';
+import { Button, message, Tooltip, Collapse, Card, Space } from 'antd';
 import { marked } from 'marked';
 import {
   CopyOutlined,
   CheckOutlined,
   ReloadOutlined,
   BulbOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 
 // 配置 marked 选项
@@ -148,6 +149,21 @@ const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
         )}
 
         {renderContent(msg.content)}
+
+        {/* 报表卡片 */}
+        {!isUser && msg.report && (
+          <Card
+            size="small"
+            hoverable
+            onClick={() => window.open(msg.report.url, '_blank')}
+            style={{ marginTop: 12, borderLeft: '3px solid #1890ff' }}
+          >
+            <Space>
+              <FileTextOutlined style={{ color: '#1890ff' }} />
+              <span>{msg.report.reportName}</span>
+            </Space>
+          </Card>
+        )}
 
         {/* 错误状态显示重试按钮 */}
         {isError && (

@@ -10,6 +10,10 @@ export default defineConfig({
         target: 'http://localhost:8083',
         changeOrigin: true
       },
+      '/api/reports': {
+        target: 'http://localhost:8083',
+        changeOrigin: true
+      },
       '/api/conversations': {
         target: 'http://localhost:8083',
         changeOrigin: true

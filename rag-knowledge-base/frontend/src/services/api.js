@@ -115,6 +115,8 @@ export const chatApi = {
 
       if (eventType === 'reasoning') {
         onData({ type: 'reasoning', content: data });
+      } else if (eventType === 'report') {
+        onData({ type: 'report', data: JSON.parse(data) });
       } else {
         // event:message 或无 event 时默认当作消息内容
         onData({ type: 'message', content: data });
