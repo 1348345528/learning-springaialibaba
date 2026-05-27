@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, message, Tooltip, Collapse, Card, Space } from 'antd';
+import { Button, message, Tooltip, Collapse, Card, Space, Modal } from 'antd';
 import { marked } from 'marked';
 import {
   CopyOutlined,
@@ -20,6 +20,7 @@ marked.use({});
 
 const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
   const [copied, setCopied] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
 
   const isUser = msg.role === 'user';
   const isError = msg.status === 'error';
@@ -152,17 +153,44 @@ const MessageBubble = ({ message: msg, isStreaming, onRetry }) => {
 
         {/* 报表卡片 */}
         {!isUser && msg.report && (
-          <Card
-            size="small"
-            hoverable
-            onClick={() => window.open(msg.report.url, '_blank')}
-            style={{ marginTop: 12, borderLeft: '3px solid #1890ff' }}
-          >
-            <Space>
-              <FileTextOutlined style={{ color: '#1890ff' }} />
-              <span>{msg.report.reportName}</span>
-            </Space>
-          </Card>
+          <>
+            <Card
+              size="small"
+              hoverable
+              onClick={() => setReportModalVisible(true)}
+              style={{ marginTop: 12, borderLeft: '3px solid #1890ff', cursor: 'pointer' }}
+            >
+              <Space>
+                <FileTextOutlined style={{ color: '#1890ff' }} />
+                <span style={{ color: '#1890ff' }}>{msg.report.reportName}</span>
+              </Space>
+            </Card>
+            <Modal
+              title={msg.report.reportName}
+              open={reportModalVisible}
+              onCancel={() => setReportModalVisible(false)}
+              width="90%"
+              style={{ top: 20 }}
+              footer={[
+                <Button key="close" onClick={() => setReportModalVisible(false)}>
+                  关闭
+                </Button>,
+                <Button key="open" type="primary" onClick={() => window.open(msg.report.url, '_blank')}>
+                  新标签页打开
+                </Button>,
+              ]}
+            >
+              <iframe
+                src={msg.report.url}
+                style={{
+                  width: '100%',
+                  height: 'calc(100vh - 200px)',
+                  border: 'none',
+                }}
+                title="报表内容"
+              />
+            </Modal>
+          </>
         )}
 
         {/* 错误状态显示重试按钮 */}
