@@ -135,12 +135,6 @@ public class RagChatService {
 
         return eventFlux
                 .concatWith(Flux.defer(() -> {
-                    // 等待一小段时间确保报表信息已经被存储
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
                     // 检查是否有报表生成
                     ReportInfo reportInfo = reportGenerationTool.pollReport();
                     if (reportInfo != null) {
